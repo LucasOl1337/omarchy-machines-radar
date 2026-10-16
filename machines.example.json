@@ -1,0 +1,7 @@
+{
+  "machines": [
+    {"id": "pc", "name": "Este PC", "local": true, "kind": "local", "provider": "Local", "role": "Estação principal"},
+    {"id": "vps1", "name": "VPS principal", "ssh": "minha-vps", "provider": "Hetzner", "role": "Apps e bancos"},
+    {"id": "notebook", "name": "Notebook", "ssh": "notebook", "kind": "local", "provider": "Local", "role": "Segunda estação"}
+  ]
+}

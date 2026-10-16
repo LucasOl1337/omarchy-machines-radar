@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "lol.machines",
+  "name": "Máquinas · radar de uso",
+  "version": "1.0.0",
+  "author": "LucasOl",
+  "description": "CPU, memória, disco, processos e containers das suas VPS e máquinas da tailnet, por SSH, em cards na barra do Omarchy.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Máquinas",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  },
+  "license": "MIT"
+}
