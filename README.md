@@ -10,6 +10,8 @@ Clicar num card abre o detalhe: processos que mais gastam CPU e memória (agrupa
 
 ![Detalhe de uma VPS](docs/detalhe.png)
 
+Novidades de cada versão em [docs/releases](docs/releases/).
+
 ## Instalar
 
 Requer Omarchy com Quickshell e plugins, Python 3 e systemd do usuário. Nas máquinas remotas basta `python3` e acesso SSH sem senha interativa (chave no agente ou sem passphrase). Nada é instalado nelas. Tailscale, Docker e `nvidia-smi` são opcionais. Node.js é necessário só pra rodar os testes do modelo.
