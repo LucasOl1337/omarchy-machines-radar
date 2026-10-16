@@ -39,6 +39,8 @@ Sem cadastro, o radar usa o `machines.example.json`.
 
 A cada minuto o timer roda `collect.py`, que manda `probe.py` pela entrada padrão de `ssh ALIAS python3 -` pra todas as máquinas em paralelo (só biblioteca padrão; na máquina local roda direto). O probe mede CPU, IO e rede numa janela de um segundo em `/proc` e lê memória, discos, temperatura, `docker ps`/`docker stats`, `systemctl --failed`, `nvidia-smi` e `tailscale ip`. Uma máquina sem resposta mantém a última leitura boa, marcada com a idade e o erro.
 
+Disco que guarda imagens montadas em loop (um disco por pessoa numa VPS dividida, por exemplo) conta o espaço delas como reservado, não usado: a porcentagem e o alarme olham só a parte do sistema, e cada imagem aparece como disco próprio.
+
 Processos aparecem só pelo nome curto (`comm`), nunca pela linha de comando, pra não vazar argumentos e tokens. O estado não guarda senhas nem variáveis de ambiente.
 
 ## Arquivos e operação

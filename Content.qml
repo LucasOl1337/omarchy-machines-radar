@@ -367,8 +367,9 @@ Item {
             delegate: Meter {
               required property var modelData
               width: parent.width
-              metric: ({label: modelData.mount === "/" ? "raiz" : modelData.mount.split("/").pop().slice(0, 6), percent: modelData.percent, tone: MachinesModel.tone("disk", modelData.percent), value: Math.round(modelData.percent) + "%",
-                        detail: modelData.mount + " · " + modelData.fs + " · " + MachinesModel.bytes(modelData.used) + " de " + MachinesModel.bytes(modelData.total) + ", " + MachinesModel.bytes(modelData.free) + " livres"})
+              readonly property var use: MachinesModel.diskUse(modelData)
+              metric: ({label: modelData.mount === "/" ? "raiz" : modelData.mount.split("/").pop().slice(0, 6), percent: use.percent, tone: MachinesModel.tone("disk", use.percent), value: Math.round(use.percent) + "%",
+                        detail: modelData.mount + " · " + modelData.fs + " · " + MachinesModel.diskDetail(modelData) + " · " + MachinesModel.bytes(modelData.free) + " livres"})
             }
           }
           Section { text: detail.m.alerts.length ? "AVISOS" : "AVISOS · nenhum" }

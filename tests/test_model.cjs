@@ -44,3 +44,14 @@ test('peer link text says direct, relay or last seen', () => {
   assert.equal(M.peerView({name: 'a', online: true, direct: false, relay: 'sao'}, now).link, 'relay sao');
   assert.equal(M.peerView({name: 'a', online: false, lastSeen: new Date(now - 2 * 3600e3).toISOString()}, now).link, 'visto há 2h 0min');
 });
+test('loop images on a shared disk count as reserved, not used', () => {
+  // Contabo: 871 GB root holding two preallocated 330 GB user disks.
+  const v = M.machineView(machine({data: data({disks: [
+    {mount: '/', fs: 'ext4', total: 871 * GB, used: 801 * GB, free: 71 * GB, percent: 92, reserved: 660 * GB, holds: ['/home/lucas', '/home/alonso']},
+    {mount: '/home/lucas', fs: 'ext4', total: 324 * GB, used: 2 * GB, free: 319 * GB, percent: 1, image: '/srv/devs/lucas.ext4'}]})}), now);
+  const disk = v.metrics.find(m => m.key === 'disk');
+  assert.equal(Math.round(disk.percent), 67);
+  assert.equal(disk.tone, 'green');
+  assert.match(disk.detail, /660 GB reservados pra lucas e alonso/);
+  assert.ok(!v.alerts.some(a => /Disco/.test(a.text)));
+});

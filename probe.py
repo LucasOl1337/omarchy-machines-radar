@@ -103,8 +103,28 @@ def memory():
     }
 
 
+def loop_images():
+    """Loop devices backed by an image file: device -> (file, its fs id, allocated bytes).
+
+    A preallocated image (one disk per user on a shared VPS, for example) fills
+    the host filesystem without being "used" by anything there.
+    """
+    out = {}
+    for loop in Path("/sys/block").glob("loop*"):
+        backing = read(str(loop) + "/loop/backing_file").strip()
+        if not backing:
+            continue
+        try:
+            st = os.stat(backing)
+        except OSError:
+            continue
+        out["/dev/" + loop.name] = (backing, st.st_dev, st.st_blocks * 512)
+    return out
+
+
 def disks():
     seen, out = set(), []
+    images, by_mount = loop_images(), {}
     for line in read("/proc/mounts").splitlines():
         dev, mount, fstype = line.split()[:3]
         mount = mount.replace("\\040", " ")
@@ -121,8 +141,22 @@ def disks():
         free = sv.f_bavail * sv.f_frsize
         used = total - sv.f_bfree * sv.f_frsize
         # Same percentage as df: root's reserved blocks don't count as free.
-        out.append({"mount": mount, "fs": fstype, "total": total, "used": used, "free": free,
-                    "percent": round(100 * used / max(1, used + free), 1)})
+        disk = {"mount": mount, "fs": fstype, "total": total, "used": used, "free": free,
+                "percent": round(100 * used / max(1, used + free), 1)}
+        if dev in images:
+            disk["image"] = images[dev][0]
+            by_mount[mount] = dev
+        out.append(disk)
+    # Images living on a filesystem are reserved space there, not usage.
+    for disk in out:
+        try:
+            host = os.stat(disk["mount"]).st_dev
+        except OSError:
+            continue
+        held = [m for m, dev in by_mount.items() if images[dev][1] == host]
+        if held:
+            disk["reserved"] = sum(images[by_mount[m]][2] for m in held)
+            disk["holds"] = held
     return out[:8]
 
 

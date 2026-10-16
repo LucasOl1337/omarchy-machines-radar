@@ -46,6 +46,22 @@ function unitName(unit) { return String(unit).replace(/\\x([0-9a-f]{2})/gi, (m, 
 
 function percentOf(used, total) { return total > 0 ? Math.round(1000 * used / total) / 10 : null; }
 
+// A disk holding loop images (one per user on a shared VPS) counts them as
+// reserved, not used: the percentage is over the space left for the system.
+function diskUse(disk) {
+  var reserved = disk.reserved || 0;
+  var used = Math.max(0, disk.used - reserved);
+  return {used: used, reserved: reserved, size: used + disk.free,
+          percent: reserved ? Math.round(1000 * used / Math.max(1, used + disk.free)) / 10 : disk.percent};
+}
+
+function diskDetail(disk) {
+  var u = diskUse(disk);
+  var holds = (disk.holds || []).map(m => m.split("/").pop()).join(" e ");
+  return gb(u.used) + " / " + gb(u.size) + " GB" + (u.reserved ? " + " + gb(u.reserved) + " GB reservados pra " + holds : "")
+    + (disk.image ? " · imagem " + disk.image : "");
+}
+
 function metrics(d) {
   var out = [];
   var cpu = d.cpu || {};
@@ -57,11 +73,12 @@ function metrics(d) {
   var memPct = percentOf(mem.used, mem.total);
   out.push({key: "memory", label: "RAM", percent: memPct, tone: tone("memory", memPct),
             detail: gb(mem.used) + " / " + gb(mem.total) + " GB", value: Math.round(memPct || 0) + "%"});
-  var disks = (d.disks || []).slice().sort((a, b) => b.percent - a.percent);
+  var disks = (d.disks || []).slice().sort((a, b) => diskUse(b).percent - diskUse(a).percent);
   if (disks.length) {
     var disk = disks[0];
-    out.push({key: "disk", label: "Disco", percent: disk.percent, tone: tone("disk", disk.percent),
-              detail: disk.mount + " · " + gb(disk.used) + " / " + gb(disk.total) + " GB", value: Math.round(disk.percent) + "%"});
+    var use = diskUse(disk);
+    out.push({key: "disk", label: "Disco", percent: use.percent, tone: tone("disk", use.percent),
+              detail: disk.mount + " · " + diskDetail(disk), value: Math.round(use.percent) + "%"});
   }
   if (mem.swapTotal > 0) {
     var swapPct = percentOf(mem.swapUsed, mem.swapTotal);
@@ -80,7 +97,8 @@ function alerts(machine, d, stale) {
   if (!d) return out;
   var cpu = d.cpu || {};
   (d.disks || []).forEach(function(disk) {
-    if (disk.percent >= LIMITS.disk[1]) out.push({text: "Disco " + disk.mount + " em " + Math.round(disk.percent) + "%, " + gb(disk.free) + " GB livres", tone: "red"});
+    var percent = diskUse(disk).percent;
+    if (percent >= LIMITS.disk[1]) out.push({text: "Disco " + disk.mount + " em " + Math.round(percent) + "%, " + gb(disk.free) + " GB livres", tone: "red"});
   });
   var mem = d.memory || {};
   var memPct = percentOf(mem.used, mem.total);
@@ -152,4 +170,4 @@ function peerView(peer, now) {
   };
 }
 
-if (typeof module !== "undefined") module.exports = {tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, peerView: peerView, unitName: unitName, STATE_ORDER: STATE_ORDER};
+if (typeof module !== "undefined") module.exports = {tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};
