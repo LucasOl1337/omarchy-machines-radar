@@ -22,7 +22,14 @@ test('full disk, failed unit and unhealthy container raise alerts', () => {
     failed: ['x.service'], containers: [{name: 'api', state: 'running', status: 'Up 2h (unhealthy)'}]})}), now);
   assert.equal(v.state, 'red');
   assert.equal(v.alerts.length, 3);
-  assert.equal(v.metrics.find(m => m.key === 'disk').tone, 'red');
+  assert.equal(v.metrics.find(m => m.key === 'disk').tone, 'yellow');
+});
+test('a nearly full disk alone is yellow, never red', () => {
+  const v = M.machineView(machine({data: data({
+    disks: [{mount: '/', fs: 'ext4', total: 100 * GB, used: 99 * GB, free: 1 * GB, percent: 99}]})}), now);
+  assert.equal(v.state, 'yellow');
+  assert.deepEqual(v.alerts.map(a => a.tone), ['yellow']);
+  assert.equal(v.metrics.find(m => m.key === 'disk').tone, 'yellow');
 });
 test('the fullest disk is the one shown on the card', () => {
   const v = M.machineView(machine({data: data({disks: [

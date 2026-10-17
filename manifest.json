@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "lol.machines",
   "name": "Máquinas · radar de uso",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "LucasOl",
   "description": "CPU, memória, disco, processos e containers das suas VPS e máquinas da tailnet, por SSH, em cards na barra do Omarchy.",
   "kinds": [

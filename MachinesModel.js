@@ -4,7 +4,9 @@ var GB = 1024 * 1024 * 1024;
 var STALE_MS = 5 * 60000;
 
 // Usage thresholds, per metric: [yellow from, red from].
-var LIMITS = {cpu: [70, 90], memory: [75, 90], disk: [75, 85], swap: [50, 80]};
+// A filling disk is something to plan for, not an emergency: it never turns red.
+var LIMITS = {cpu: [70, 90], memory: [75, 90], disk: [75, Infinity], swap: [50, 80]};
+var DISK_ALERT = 85;
 
 function tone(kind, percent) {
   if (typeof percent !== "number" || !isFinite(percent)) return "none";
@@ -98,7 +100,7 @@ function alerts(machine, d, stale) {
   var cpu = d.cpu || {};
   (d.disks || []).forEach(function(disk) {
     var percent = diskUse(disk).percent;
-    if (percent >= LIMITS.disk[1]) out.push({text: "Disco " + disk.mount + " em " + Math.round(percent) + "%, " + gb(disk.free) + " GB livres", tone: "red"});
+    if (percent >= DISK_ALERT) out.push({text: "Disco " + disk.mount + " em " + Math.round(percent) + "%, " + gb(disk.free) + " GB livres", tone: "yellow"});
   });
   var mem = d.memory || {};
   var memPct = percentOf(mem.used, mem.total);

@@ -2,7 +2,7 @@
 
 O uso de cada máquina sua (PC, notebook e VPS) na barra do Omarchy, um card por máquina, no mesmo formato do [Radar 9Router](https://github.com/LucasOl1337/omarchy-9router-radar).
 
-O ícone de servidor abre uma grade com CPU, RAM, o disco mais cheio e swap, cada barra verde, amarela ou vermelha, um gráfico da última hora e os avisos que pedem atenção: disco acima de 85%, memória acima de 90%, carga alta, steal de VPS disputada, serviços do systemd falhando e containers sem saúde. O ícone acende quando alguma VPS não responde ou tem aviso vermelho.
+O ícone de servidor abre uma grade com CPU, RAM, o disco mais cheio e swap, cada barra verde, amarela ou vermelha, um gráfico da última hora e os avisos que pedem atenção: disco acima de 85% (só amarelo; disco enchendo nunca acende vermelho), memória acima de 90%, carga alta, steal de VPS disputada, serviços do systemd falhando e containers sem saúde. O ícone acende quando alguma VPS não responde ou tem aviso vermelho.
 
 ![Visão geral com um card por máquina](docs/visao-geral.png)
 
