@@ -39,13 +39,42 @@ Item {
   function cycleTab(step) { tab = cycle(tabs, tab, step) }
   function selectTab(index) { if (index < tabs.length) tab = tabs[index].id }
   function scrollBy(amount) { list.contentY = Math.max(0, Math.min(Math.max(0, list.contentHeight - list.height), list.contentY + amount)) }
-  function launch(command) { actions.command = command; actions.running = true }
-  function openShell(m) { launch(m.local ? ["xdg-terminal-exec"] : ["xdg-terminal-exec", "ssh", m.ssh]); closeRequested() }
-  function openTop(m) {
-    var top = "btop 2>/dev/null || htop 2>/dev/null || top"
-    launch(m.local ? ["xdg-terminal-exec", "sh", "-c", top] : ["xdg-terminal-exec", "ssh", "-t", m.ssh, top]); closeRequested()
+  // Every action goes through act.py with plain arguments; it resolves the machine and quotes.
+  readonly property string actScript: decodeURIComponent(Qt.resolvedUrl("act.py").toString().replace(/^file:\/\//, ""))
+  property string toast: ""
+  property bool toastOk: true
+  property var pending: null       // {label, verb, args} waiting for a second click
+  function act(m, verb, args, closeAfter) {
+    if (actProcess.running) return
+    actProcess.command = MachinesModel.actCommand(actScript, verb, m.id, args)
+    actProcess.running = true
+    if (closeAfter) closeRequested()
   }
-  function copySsh(m) { launch(["wl-copy", m.local ? m.host : "ssh " + m.ssh]) }
+  // Destructive actions ask for a second click within 4 s.
+  function confirmAct(m, key, label, verb, args) {
+    if (pending && pending.key === key) { pending = null; act(m, verb, args, false); return }
+    pending = {key: key, label: label}
+    confirmTimer.restart()
+  }
+  function isPending(key) { return pending !== null && pending.key === key }
+  function openShell(m) { act(m, "open", ["shell"], true) }
+  function openTop(m) { act(m, "open", ["top"], true) }
+  function copySsh(m) { launch(["wl-copy", m.local ? m.host : m.adb ? "adb -s " + m.adb + " shell" : "ssh " + m.ssh]); showToast(true, "comando copiado") }
+  function launch(command) { actions.command = command; actions.running = true }
+  function showToast(ok, text) { toastOk = ok; toast = text; toastTimer.restart() }
+  Timer { id: toastTimer; interval: 6000; onTriggered: root.toast = "" }
+  Timer { id: confirmTimer; interval: 4000; onTriggered: root.pending = null }
+  Process {
+    id: actProcess
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try { var r = JSON.parse(text); root.showToast(r.ok, r.text) } catch (e) { root.showToast(false, "ação sem resposta") }
+        if (!root.toast) return
+        root.refreshRequested()
+      }
+    }
+  }
+  property string killFilter: ""
   onTabChanged: { list.contentY = 0; savePrefs() }
   onTabsChanged: if (prefsLoaded && !tabs.some(t => t.id === tab)) tab = "all"
   Process { id: actions }
@@ -173,11 +202,39 @@ Item {
   component Action: Rectangle {
     id: action
     property string label: ""
+    property string tip: ""
+    property bool danger: false
+    property bool armed: false
+    property bool small: false
     signal clicked()
-    width: actionText.implicitWidth + Style.space(22); height: Style.space(26); radius: Style.space(6)
-    color: actionMouse.containsMouse ? root.faint(.1) : root.faint(.04); border.width: 1; border.color: root.faint(.12)
-    Text { id: actionText; anchors.centerIn: parent; text: action.label; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+    readonly property color tint: danger && (actionMouse.containsMouse || armed) ? "#ef4444" : root.foreground
+    width: actionText.implicitWidth + Style.space(small ? 14 : 22); height: Style.space(small ? 20 : 26); radius: Style.space(6)
+    color: armed ? Qt.rgba(0.94, 0.27, 0.27, .25) : actionMouse.containsMouse ? Qt.rgba(tint.r, tint.g, tint.b, .12) : Qt.rgba(tint.r, tint.g, tint.b, .04)
+    border.width: 1; border.color: Qt.rgba(tint.r, tint.g, tint.b, armed ? .6 : .14)
+    Text { id: actionText; anchors.centerIn: parent; text: action.armed ? "confirmar?" : action.label; color: action.tint; opacity: action.small && !actionMouse.containsMouse && !action.armed ? .6 : 1; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
     MouseArea { id: actionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: action.clicked() }
+    ToolTip.visible: tip !== "" && actionMouse.containsMouse
+    ToolTip.delay: 500
+    ToolTip.text: tip
+  }
+
+  // A row in a list: label on the left, detail and buttons on the right.
+  component ListRow: Rectangle {
+    id: row
+    property string label: ""
+    property string sub: ""
+    property string info: ""
+    property color dot: "transparent"
+    property bool strong: false
+    default property alias buttons: rowButtons.data
+    height: Style.space(26); radius: Style.space(5)
+    color: rowMouse.containsMouse ? root.faint(.05) : "transparent"
+    MouseArea { id: rowMouse; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+    Rectangle { visible: row.dot.a > 0; x: Style.space(4); anchors.verticalCenter: parent.verticalCenter; width: Style.space(6); height: width; radius: width / 2; color: row.dot }
+    Label { id: rowLabel; x: Style.space(16); anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, parent.width * .4); text: row.label; font.bold: row.strong }
+    Label { anchors.left: rowLabel.right; anchors.leftMargin: Style.space(6); anchors.right: rowDetail.left; anchors.rightMargin: Style.space(8); anchors.verticalCenter: parent.verticalCenter; text: row.sub; opacity: .5 }
+    Label { id: rowDetail; anchors.right: rowButtons.left; anchors.rightMargin: Style.space(8); anchors.verticalCenter: parent.verticalCenter; text: row.info; opacity: .7; elide: Text.ElideNone }
+    Row { id: rowButtons; anchors.right: parent.right; anchors.rightMargin: Style.space(4); anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(4) }
   }
 
   // ---------- header ----------
@@ -250,7 +307,7 @@ Item {
               Rectangle {
                 id: stateBox
                 width: Style.space(34); height: width; radius: Style.space(7); color: root.faint(.06)
-                Text { anchors.centerIn: parent; text: card.modelData.local ? "" : ""; color: root.stateColor(card.modelData.state); font.family: root.fontFamily; font.pixelSize: Style.font.title }
+                Text { anchors.centerIn: parent; text: card.modelData.phone ? "" : card.modelData.local ? "" : ""; color: root.stateColor(card.modelData.state); font.family: root.fontFamily; font.pixelSize: Style.font.title }
               }
               Column {
                 anchors.left: stateBox.right; anchors.leftMargin: Style.space(10); anchors.right: badges.left; anchors.rightMargin: Style.space(8)
@@ -299,7 +356,7 @@ Item {
       id: detail
       visible: root.selected !== null
       width: list.width - Style.space(10); spacing: Style.space(10)
-      readonly property var m: root.selected || ({metrics: [], alerts: [], cpuHistory: [], memHistory: [], data: null})
+      readonly property var m: root.selected || ({metrics: [], alerts: [], cpuHistory: [], memHistory: [], terminals: [], tmux: [], procs: [], phone: false, readonly: false, data: null})
       readonly property var d: m.data || ({})
       Item {
         width: parent.width; height: Style.space(40)
@@ -319,9 +376,11 @@ Item {
         }
         Row {
           anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(6)
-          Action { label: "Terminal"; onClicked: root.openShell(detail.m) }
-          Action { label: "btop"; onClicked: root.openTop(detail.m) }
-          Action { label: detail.m.local ? "Copiar host" : "Copiar ssh"; onClicked: root.copySsh(detail.m) }
+          Action { label: "Terminal"; tip: detail.m.phone ? "adb shell no celular" : "shell novo na máquina"; onClicked: root.openShell(detail.m) }
+          Action { visible: !detail.m.phone; label: "tmux"; tip: "entra (ou cria) a sessão tmux \"radar\": continua viva se a janela fechar"; onClicked: root.act(detail.m, "open", ["tmux", "radar"], true) }
+          Action { label: detail.m.phone ? "top" : "btop"; onClicked: root.openTop(detail.m) }
+          Action { visible: detail.m.phone; label: "Tela"; tip: "espelha e controla o celular (scrcpy)"; onClicked: root.act(detail.m, "open", ["screen"], true) }
+          Action { label: detail.m.local ? "Copiar host" : detail.m.phone ? "Copiar adb" : "Copiar ssh"; onClicked: root.copySsh(detail.m) }
         }
       }
       Label { width: parent.width; text: detail.m.role || ""; opacity: .75 }
@@ -377,6 +436,20 @@ Item {
             model: detail.m.alerts
             delegate: Label { required property var modelData; width: parent.width; text: "• " + modelData.text; color: modelData.tone === "none" ? root.foreground : root.toneColor(modelData.tone) }
           }
+          Section { visible: (detail.d.failed || []).length > 0; text: "SERVIÇOS FALHANDO · " + (detail.d.failed || []).length }
+          Repeater {
+            model: detail.d.failed || []
+            delegate: ListRow {
+              id: unitRow
+              required property var modelData
+              readonly property string scope: (detail.d.failedUser || []).indexOf(modelData) >= 0 ? "user" : "system"
+              readonly property string key: "unit:" + detail.m.id + ":" + modelData
+              width: parent.width; label: MachinesModel.unitName(modelData); sub: scope === "user" ? "usuário" : "sistema"; dot: "#eab308"
+              Action { small: true; label: "log"; tip: "journalctl -f numa janela"; onClicked: root.act(detail.m, "unit", ["log", unitRow.modelData, unitRow.scope], true) }
+              Action { small: true; visible: !detail.m.readonly; label: "reiniciar"; danger: true; armed: root.isPending(unitRow.key)
+                       onClicked: root.confirmAct(detail.m, unitRow.key, "", "unit", ["restart", unitRow.modelData, unitRow.scope]) }
+            }
+          }
         }
         // Right: processes, containers, agents.
         Column {
@@ -428,6 +501,115 @@ Item {
           }
         }
       }
+
+      // ---------- terminals, tmux and processes: full width, with actions ----------
+      Rectangle { visible: !!detail.m.data && !detail.m.phone; width: parent.width; height: 1; color: root.faint(.08) }
+      Row {
+        visible: !!detail.m.data && !detail.m.phone
+        width: parent.width; spacing: Style.space(16)
+        Column {
+          width: (parent.width - parent.spacing) * .5; spacing: Style.space(2)
+          Section { text: "TERMINAIS ABERTOS · " + detail.m.terminals.length + (detail.m.terminals.filter(t => t.agent).length ? " · " + detail.m.terminals.filter(t => t.agent).length + " com agente" : "") }
+          Label { visible: !detail.m.terminals.length; text: "nenhum terminal (pts) aberto"; opacity: .45 }
+          Repeater {
+            model: detail.m.terminals.slice(0, 24)
+            delegate: ListRow {
+              id: ttyRow
+              required property var modelData
+              readonly property string key: "tty:" + detail.m.id + ":" + modelData.pid
+              width: parent.width
+              label: modelData.tty + "  " + (modelData.running || modelData.shell)
+              strong: modelData.agent
+              sub: modelData.user + (modelData.running ? " · em " + modelData.shell : "")
+              info: [modelData.idleText, modelData.ageText].filter(Boolean).join(" · ")
+              dot: modelData.idleText === "ativo" ? "#22c55e" : root.faint(.25)
+              Action { small: true; visible: !detail.m.readonly && !!ttyRow.modelData.running; label: "parar " + ttyRow.modelData.running; danger: true
+                       tip: "SIGTERM só no programa da frente (" + ttyRow.modelData.running + "), o terminal fica"
+                       armed: root.isPending(ttyRow.key + ":fg")
+                       onClicked: root.confirmAct(detail.m, ttyRow.key + ":fg", "", "kill", [ttyRow.modelData.fgPid, ttyRow.modelData.fg, "TERM"]) }
+              Action { small: true; visible: !detail.m.readonly; label: "fechar"; danger: true; tip: "SIGHUP no terminal inteiro, como fechar a janela"
+                       armed: root.isPending(ttyRow.key)
+                       onClicked: root.confirmAct(detail.m, ttyRow.key, "", "tty-hup", [ttyRow.modelData.pid, ttyRow.modelData.shell]) }
+            }
+          }
+          Label { visible: detail.m.terminals.length > 24; text: "+ " + (detail.m.terminals.length - 24) + " terminais"; opacity: .45 }
+
+          Section { visible: detail.m.tmux.length > 0; text: "SESSÕES TMUX · " + detail.m.tmux.length }
+          Repeater {
+            model: detail.m.tmux
+            delegate: ListRow {
+              id: tmuxRow
+              required property var modelData
+              readonly property string key: "tmux:" + detail.m.id + ":" + modelData.name
+              width: parent.width; label: modelData.name + (modelData.socket !== "default" ? "  (-L " + modelData.socket + ")" : ""); strong: modelData.attached
+              sub: modelData.windows + (modelData.windows === 1 ? " janela" : " janelas") + " · " + modelData.command
+              info: (modelData.attached ? "conectada · " : "") + "ativa há " + modelData.idleText
+              dot: modelData.attached ? "#22c55e" : root.faint(.25)
+              Action { small: true; label: "entrar"; onClicked: root.act(detail.m, "open", ["tmux", tmuxRow.modelData.name, tmuxRow.modelData.socket], true) }
+              Action { small: true; visible: !detail.m.readonly; label: "encerrar"; danger: true; armed: root.isPending(tmuxRow.key)
+                       onClicked: root.confirmAct(detail.m, tmuxRow.key, "", "tmux-kill", [tmuxRow.modelData.name, tmuxRow.modelData.socket]) }
+            }
+          }
+        }
+        Column {
+          width: (parent.width - parent.spacing) * .5; spacing: Style.space(2)
+          Item {
+            width: parent.width; height: Style.space(26)
+            Section { anchors.verticalCenter: parent.verticalCenter; topPadding: 0; text: detail.m.readonly ? "PROCESSOS · só leitura (máquina compartilhada)" : "PROCESSOS · encerrar" }
+            Rectangle {
+              anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(170); height: Style.space(22); radius: Style.space(5); color: root.faint(.05); border.width: 1; border.color: root.faint(.12)
+              TextInput {
+                id: filterInput
+                anchors.fill: parent; anchors.leftMargin: Style.space(8); anchors.rightMargin: Style.space(8); verticalAlignment: TextInput.AlignVCenter
+                color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; clip: true
+                onTextChanged: root.killFilter = text.toLowerCase()
+                Keys.onEscapePressed: { text = ""; focus = false }
+              }
+              Label { visible: !filterInput.text; anchors.verticalCenter: parent.verticalCenter; x: Style.space(8); text: "filtrar por nome…"; opacity: .35 }
+            }
+          }
+          Repeater {
+            model: detail.m.procs.filter(p => !root.killFilter || p.name.toLowerCase().indexOf(root.killFilter) >= 0 || String(p.pid) === root.killFilter).slice(0, 24)
+            delegate: ListRow {
+              id: procRow
+              required property var modelData
+              readonly property string key: "pid:" + detail.m.id + ":" + modelData.pid
+              width: parent.width; label: modelData.name; sub: modelData.pid + " · " + modelData.user + (modelData.tty ? " · " + modelData.tty : "")
+              info: modelData.cpu.toFixed(1) + "% · " + MachinesModel.bytes(modelData.mem)
+              Action { small: true; visible: !detail.m.readonly; label: "encerrar"; danger: true; tip: "SIGTERM: pede pro processo sair"; armed: root.isPending(procRow.key)
+                       onClicked: root.confirmAct(detail.m, procRow.key, "", "kill", [procRow.modelData.pid, procRow.modelData.name, "TERM"]) }
+              Action { small: true; visible: !detail.m.readonly; label: "matar"; danger: true; tip: "SIGKILL: força, sem chance de salvar"; armed: root.isPending(procRow.key + ":k")
+                       onClicked: root.confirmAct(detail.m, procRow.key + ":k", "", "kill", [procRow.modelData.pid, procRow.modelData.name, "KILL"]) }
+            }
+          }
+        }
+      }
+
+      // ---------- phone: battery and apps ----------
+      Rectangle { visible: detail.m.phone && !!detail.m.data; width: parent.width; height: 1; color: root.faint(.08) }
+      Column {
+        visible: detail.m.phone && !!detail.m.data
+        width: parent.width; spacing: Style.space(2)
+        Label {
+          width: parent.width; opacity: .7
+          text: detail.d.battery ? "Bateria " + detail.d.battery.level + "%" + (detail.d.battery.status ? " · " + detail.d.battery.status : "")
+            + (detail.d.battery.temp ? " · " + detail.d.battery.temp.toFixed(1) + "°C" : "") : ""
+        }
+        Section { text: "APPS E PROCESSOS · fechar app usa force-stop; processo do sistema o adb não encerra" }
+        Repeater {
+          model: detail.m.procs.slice(0, 20)
+          delegate: ListRow {
+            id: appRow
+            required property var modelData
+            readonly property bool app: /^[a-zA-Z][\w]*(\.[\w]+)+(:[\w.]+)?$/.test(modelData.name)
+            readonly property string key: "app:" + detail.m.id + ":" + modelData.pid
+            width: parent.width; label: modelData.name; strong: app; sub: modelData.pid + " · " + modelData.user; info: modelData.detail
+            Action { small: true; visible: appRow.app; label: "fechar app"; danger: true; armed: root.isPending(appRow.key)
+                     onClicked: root.confirmAct(detail.m, appRow.key, "", "kill", [appRow.modelData.pid, appRow.modelData.name, "TERM"]) }
+          }
+        }
+      }
     }
 
     // ---------- tailnet ----------
@@ -456,7 +638,10 @@ Item {
   Text {
     id: footer
     anchors.bottom: parent.bottom; width: parent.width; elide: Text.ElideRight
-    text: "← → aba · 0–9 escolhe · T tailnet · ↑ ↓ rola · R atualiza · clique no card abre o detalhe · leitura a cada 1 min"
-    color: root.foreground; opacity: .4; font.family: root.fontFamily; font.pixelSize: Style.font.caption
+    text: root.toast ? (root.toastOk ? "✓ " : "✗ ") + root.toast
+      : root.pending ? "clique de novo pra confirmar (4 s)"
+      : "← → aba · 0–9 escolhe · T tailnet · ↑ ↓ rola · R atualiza · clique no card abre o detalhe · leitura a cada 1 min"
+    color: root.toast ? (root.toastOk ? "#22c55e" : "#ef4444") : root.pending ? "#eab308" : root.foreground
+    opacity: root.toast || root.pending ? .95 : .4; font.family: root.fontFamily; font.pixelSize: Style.font.caption
   }
 }

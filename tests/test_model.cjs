@@ -62,3 +62,32 @@ test('loop images on a shared disk count as reserved, not used', () => {
   assert.match(disk.detail, /660 GB reservados pra lucas e alonso/);
   assert.ok(!v.alerts.some(a => /Disco/.test(a.text)));
 });
+test('terminals show what runs in the foreground and how long they sit idle', () => {
+  const v = M.machineView(machine({data: data({terminals: [
+    {tty: 'pts/3', pid: 10, user: 'lol', shell: 'bash', fg: 'claude', fgPid: 11, procs: 4, idle: 5, age: 3700, agent: true},
+    {tty: 'pts/4', pid: 20, user: 'lol', shell: 'bash', fg: 'bash', fgPid: 20, procs: 1, idle: 7200, age: 7300, agent: false}]})}), now);
+  assert.equal(v.terminals[0].running, 'claude');
+  assert.equal(v.terminals[0].idleText, 'ativo');
+  assert.equal(v.terminals[1].running, '');
+  assert.equal(v.terminals[1].idleText, 'parado há 2h 0min');
+});
+test('process list puts CPU first, then memory', () => {
+  const v = M.machineView(machine({data: data({procs: [
+    {pid: 1, name: 'a', user: 'x', cpu: 0, mem: 9 * GB}, {pid: 2, name: 'b', user: 'x', cpu: 50, mem: GB}]})}), now);
+  assert.deepEqual(v.procs.map(p => p.name), ['b', 'a']);
+});
+test('a phone is off when unreachable and warns on low battery out of the plug', () => {
+  assert.equal(M.machineView(machine({online: false, kind: 'local', adb: 'x:5555'}), now).state, 'off');
+  const v = M.machineView(machine({adb: 'x:5555', data: data({platform: 'android', battery: {level: 9, plugged: false, temp: 30}})}), now);
+  assert.equal(v.phone, true);
+  assert.equal(v.state, 'yellow');
+  assert.match(v.facts, /bateria 9%/);
+});
+test('actions go to act.py as plain arguments, never as a shell string', () => {
+  assert.deepEqual(M.actCommand('/x/act.py', 'kill', 'lol', [42, 'bash; rm -rf /']),
+    ['/usr/bin/python3', '/x/act.py', 'kill', 'lol', '42', 'bash; rm -rf /']);
+});
+test('android load average does not raise a load alert', () => {
+  const v = M.machineView(machine({data: data({platform: 'android', cpu: {percent: 7, iowait: 0, steal: 0, load: [17, 17, 17], cores: 8}})}), now);
+  assert.equal(v.alerts.length, 0);
+});

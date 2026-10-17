@@ -2,6 +2,8 @@
   "machines": [
     {"id": "pc", "name": "Este PC", "local": true, "kind": "local", "provider": "Local", "role": "Estação principal"},
     {"id": "vps1", "name": "VPS principal", "ssh": "minha-vps", "provider": "Hetzner", "role": "Apps e bancos"},
-    {"id": "notebook", "name": "Notebook", "ssh": "notebook", "kind": "local", "provider": "Local", "role": "Segunda estação"}
+    {"id": "notebook", "name": "Notebook", "ssh": "notebook", "kind": "local", "provider": "Local", "role": "Segunda estação"},
+    {"id": "dividida", "name": "VPS dividida", "ssh": "vps-equipe", "readonly": true, "provider": "Hetzner", "role": "Servidor de outra equipe: só observar"},
+    {"id": "celular", "name": "Celular", "adb": "100.64.0.10:5555", "kind": "local", "provider": "Android", "role": "Celular por adb na tailnet"}
   ]
 }

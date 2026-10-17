@@ -107,9 +107,13 @@ function alerts(machine, d, stale) {
   if (memPct >= LIMITS.memory[1]) out.push({text: "Memória em " + Math.round(memPct) + "%", tone: "red"});
   var swapPct = percentOf(mem.swapUsed, mem.swapTotal);
   if (swapPct >= LIMITS.swap[1]) out.push({text: "Swap em " + Math.round(swapPct) + "%", tone: "yellow"});
-  if (cpu.load && cpu.cores && cpu.load[1] > 1.5 * cpu.cores) out.push({text: "Carga " + cpu.load[1].toFixed(1) + " para " + cpu.cores + " núcleos", tone: "yellow"});
+  // Android counts uninterruptible kernel threads in the load average: it says nothing there.
+  if (d.platform !== "android" && cpu.load && cpu.cores && cpu.load[1] > 1.5 * cpu.cores) out.push({text: "Carga " + cpu.load[1].toFixed(1) + " para " + cpu.cores + " núcleos", tone: "yellow"});
   if (cpu.steal >= 10) out.push({text: "Steal de " + Math.round(cpu.steal) + "%: o host da VPS está disputado", tone: "yellow"});
   if (d.temperature >= 85) out.push({text: "CPU a " + Math.round(d.temperature) + "°C", tone: "red"});
+  var bat = d.battery;
+  if (bat && bat.level !== null && !bat.plugged && bat.level <= 15) out.push({text: "Bateria em " + bat.level + "%, fora da tomada", tone: "yellow"});
+  if (bat && bat.temp >= 45) out.push({text: "Bateria a " + Math.round(bat.temp) + "°C", tone: "yellow"});
   var failed = (d.failed || []).map(unitName);
   if (failed.length) out.push({text: (failed.length === 1 ? "Serviço falhando: " : failed.length + " serviços falhando: ") + failed.slice(0, 3).join(", ") + (failed.length > 3 ? "…" : ""), tone: "yellow"});
   (d.containers || []).forEach(function(c) {
@@ -135,12 +139,14 @@ function machineView(machine, now) {
     if (d.containers) facts.push(running + "/" + containers.length + " containers");
     if (agentCount) facts.push(agentCount + (agentCount === 1 ? " agente" : " agentes"));
     if (d.temperature) facts.push(Math.round(d.temperature) + "°C");
+    if (d.battery && d.battery.level !== null) facts.push("bateria " + d.battery.level + "%" + (d.battery.plugged ? " ⚡" : ""));
   }
   var online = machine.online;
   var state = !online ? (machine.kind === "local" ? "off" : "down") : warnings.some(w => w.tone === "red") ? "red" : warnings.some(w => w.tone === "yellow") ? "yellow" : "ok";
   return {
     id: machine.id, name: machine.name, role: machine.role || "", provider: machine.provider || sys.vendor || "",
-    target: machine.target || machine.ssh || "", ssh: machine.ssh || "", local: !!machine.local, kind: machine.kind,
+    target: machine.target || machine.ssh || "", ssh: machine.ssh || "", adb: machine.adb || "", local: !!machine.local, kind: machine.kind,
+    phone: !!machine.adb || (d && d.platform === "android") || false, readonly: !!machine.readonly,
     online: online, state: state, stale: stale, latencyMs: machine.latencyMs,
     ageText: machine.probedAt ? duration((now - machine.probedAt * 1000) / 1000) : "",
     host: sys.hostname || "", ip: (machine.tailnet && machine.tailnet.ip) || sys.tailscaleIp || "",
@@ -149,8 +155,34 @@ function machineView(machine, now) {
     metrics: list, alerts: warnings, facts: facts.join(" · "),
     cpuHistory: (machine.history || []).map(p => p[1]),
     memHistory: (machine.history || []).map(p => p[2]),
-    data: d
+    data: d,
+    terminals: d ? terminalRows(d) : [],
+    tmux: d ? (d.tmux || []).map(t => ({name: t.name, socket: t.socket || "default", windows: t.windows, attached: t.attached, command: t.command, idleText: duration(t.idle)})) : [],
+    procs: d ? procRows(d) : []
   };
+}
+
+// Open pseudo-terminals, busiest (least idle) first.
+function terminalRows(d) {
+  return (d.terminals || []).map(t => ({
+    tty: t.tty, pid: t.pid, user: t.user, shell: t.shell, fg: t.fg, fgPid: t.fgPid, agent: !!t.agent,
+    running: t.fg && t.fg !== t.shell ? t.fg : "",
+    idleText: t.idle === null || t.idle === undefined ? "" : t.idle < 60 ? "ativo" : "parado há " + duration(t.idle),
+    ageText: t.age ? "aberto há " + duration(t.age) : ""
+  }));
+}
+
+// Single processes for the kill list: CPU-heavy first, then memory.
+function procRows(d) {
+  return (d.procs || []).slice().sort((a, b) => (b.cpu - a.cpu) || (b.mem - a.mem)).map(p => ({
+    pid: p.pid, name: p.name, user: p.user, cpu: p.cpu, mem: p.mem, tty: p.tty || "",
+    detail: p.cpu.toFixed(1) + "% · " + bytes(p.mem) + (p.age ? " · há " + duration(p.age) : "")
+  }));
+}
+
+// Command line for act.py; the panel never builds shell strings itself.
+function actCommand(script, verb, id, args) {
+  return ["/usr/bin/python3", script, verb, id].concat((args || []).map(String));
 }
 
 var STATE_ORDER = {down: 0, red: 1, yellow: 2, ok: 3, off: 4};
@@ -172,4 +204,4 @@ function peerView(peer, now) {
   };
 }
 
-if (typeof module !== "undefined") module.exports = {tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};
+if (typeof module !== "undefined") module.exports = {terminalRows: terminalRows, procRows: procRows, actCommand: actCommand, tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};

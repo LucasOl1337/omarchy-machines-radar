@@ -10,7 +10,7 @@ from pathlib import Path
 
 def deploy_ui(source, destination):
     """Give each QML generation a fresh URL in the running shell's cache."""
-    files = sorted([*source.glob('*.qml'), *source.glob('*.js'), *source.glob('icons/*.png')])
+    files = sorted([*source.glob('*.qml'), *source.glob('*.js'), *source.glob('icons/*.png'), *source.glob('act.py')])
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.relative_to(source).as_posix().encode() + b'\0' + path.read_bytes())
@@ -47,7 +47,7 @@ def install():
     destination = Path.home() / '.config/omarchy/plugins/lol.machines'
     subprocess.run(['omarchy-plugin-validate', str(source)], check=True)
     generation = deploy_ui(source, destination)
-    for name in ('collect.py', 'probe.py', 'machines.example.json'):
+    for name in ('collect.py', 'probe.py', 'android.py', 'act.py', 'machines.example.json'):
         shutil.copy2(source / name, destination / name)
     units = Path.home() / '.config/systemd/user'
     units.mkdir(parents=True, exist_ok=True)

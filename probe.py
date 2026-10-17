@@ -48,7 +48,7 @@ def cpu_ticks():
 
 
 def processes():
-    """pid -> (comm, cpu ticks, rss bytes, state)."""
+    """pid -> (comm, cpu ticks, rss bytes, state, extra) where extra has uid, tty, tpgid, session, start."""
     out = {}
     for entry in os.scandir("/proc"):
         if not entry.name.isdigit():
@@ -59,10 +59,79 @@ def processes():
         i, j = stat.find("("), stat.rfind(")")
         rest = stat[j + 2:].split()
         try:
-            out[int(entry.name)] = (stat[i + 1:j], int(rest[11]) + int(rest[12]), int(rest[21]) * PAGE, rest[0])
-        except (IndexError, ValueError):
+            uid = entry.stat().st_uid
+            extra = {"uid": uid, "session": int(rest[3]), "tty": int(rest[4]), "tpgid": int(rest[5]), "start": int(rest[19])}
+            out[int(entry.name)] = (stat[i + 1:j], int(rest[11]) + int(rest[12]), int(rest[21]) * PAGE, rest[0], extra)
+        except (IndexError, ValueError, OSError):
             continue
     return out
+
+
+def users():
+    names = {}
+    for line in read("/etc/passwd").splitlines():
+        parts = line.split(":")
+        if len(parts) > 2 and parts[2].isdigit():
+            names.setdefault(int(parts[2]), parts[0])
+    return names
+
+
+def pts_name(tty_nr):
+    """Pseudo-terminal name for a tty_nr from /proc/PID/stat, or None for anything else."""
+    major = (tty_nr >> 8) & 0xfff
+    minor = (tty_nr & 0xff) | ((tty_nr >> 12) & 0xfff00)
+    if 136 <= major <= 143:
+        return "pts/%d" % ((major - 136) * 256 + minor)
+    return None
+
+
+def terminals(procs, names, boot_ticks_now):
+    """Open pseudo-terminals: owner, shell, what runs in the foreground and last activity."""
+    by_tty = {}
+    for pid, (name, _ticks, _rss, _state, extra) in procs.items():
+        tty = pts_name(extra["tty"])
+        if tty:
+            by_tty.setdefault(tty, []).append(pid)
+    now = time.time()
+    out = []
+    for tty, pids in by_tty.items():
+        first = procs[pids[0]][4]
+        fg = procs.get(first["tpgid"]) if first["tpgid"] > 0 else None
+        leader = procs.get(first["session"]) or procs[min(pids)]
+        try:
+            st = os.stat("/dev/" + tty)
+            idle = max(0, int(now - max(st.st_atime, st.st_mtime)))
+        except OSError:
+            idle = None
+        out.append({
+            "tty": tty, "pid": first["session"], "user": names.get(leader[4]["uid"], str(leader[4]["uid"])),
+            "shell": leader[0], "fg": fg[0] if fg else leader[0], "fgPid": first["tpgid"] if fg else first["session"],
+            "procs": len(pids), "idle": idle, "age": max(0, int((boot_ticks_now - leader[4]["start"]) / HZ)),
+            "agent": any(procs[p][0] in AGENTS for p in pids),
+        })
+    out.sort(key=lambda t: (t["idle"] is None, t["idle"] or 0))
+    return out[:60]
+
+
+def tmux_sessions():
+    """Sessions of every tmux server of this user (default and named -L sockets)."""
+    base = Path(os.environ.get("TMUX_TMPDIR", "/tmp")) / ("tmux-%d" % os.getuid())
+    sockets = sorted(p.name for p in base.glob("*")) if base.is_dir() else []
+    fmt = "#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_activity}\t#{pane_current_command}"
+    out = []
+    for socket_name in sockets or ["default"]:
+        raw = run(["tmux", "-L", socket_name, "list-sessions", "-F", fmt], 5)
+        for line in raw.splitlines():
+            c = line.split("\t")
+            if len(c) < 5:
+                continue
+            try:
+                out.append({"name": c[0], "socket": socket_name, "windows": int(c[1]), "attached": int(c[2]) > 0,
+                            "idle": max(0, int(time.time()) - int(c[3])), "command": c[4]})
+            except ValueError:
+                continue
+    out.sort(key=lambda s: s["idle"])
+    return out[:40]
 
 
 def net_bytes():
@@ -227,13 +296,9 @@ def containers():
     return out[:40]
 
 
-def failed_units():
-    names = []
-    for cmd in (["systemctl", "--failed", "--no-legend", "--plain"], ["systemctl", "--user", "--failed", "--no-legend", "--plain"]):
-        for line in run(cmd, 10).splitlines():
-            if line.split():
-                names.append(line.split()[0])
-    return sorted(set(names))[:20]
+def failed_units(scope="system"):
+    cmd = ["systemctl"] + (["--user"] if scope == "user" else []) + ["--failed", "--no-legend", "--plain"]
+    return sorted({line.split()[0] for line in run(cmd, 10).splitlines() if line.split()})[:20]
 
 
 def system():
@@ -259,13 +324,18 @@ def measure(window=1.0):
     idle = delta[3] + delta[4]
 
     # Grouped by process name: CPU over the window (% of one core) and summed RSS.
-    groups, running = {}, 0
-    for pid, (name, ticks, rss, state) in p1.items():
+    groups, running, single = {}, 0, []
+    names = users()
+    uptime_ticks = float(read("/proc/uptime").split()[0] or 0) * HZ
+    for pid, (name, ticks, rss, state, extra) in p1.items():
+        cpu = (ticks - p0[pid][1]) / HZ / dt * 100 if pid in p0 and p0[pid][0] == name else 0.0
+        single.append({"pid": pid, "name": name, "user": names.get(extra["uid"], str(extra["uid"])),
+                       "cpu": round(cpu, 1), "mem": rss, "tty": pts_name(extra["tty"]) or "",
+                       "age": max(0, int((uptime_ticks - extra["start"]) / HZ))})
         g = groups.setdefault(name, {"name": name, "cpu": 0.0, "mem": 0, "count": 0})
         g["count"] += 1
         g["mem"] += rss
-        if pid in p0 and p0[pid][0] == name:
-            g["cpu"] += (ticks - p0[pid][1]) / HZ / dt * 100
+        g["cpu"] += cpu
         if state == "R":
             running += 1
     items = list(groups.values())
@@ -285,14 +355,30 @@ def measure(window=1.0):
             "topMem": sorted(items, key=lambda g: -g["mem"])[:10],
         },
         "agents": {g["name"]: g["count"] for g in items if g["name"] in AGENTS},
+        # Individual processes (name only, never the command line) for the kill list.
+        "procs": top_single(single),
+        "terminals": terminals(p1, names, uptime_ticks),
     }
+
+
+def top_single(single, size=25):
+    by_cpu = sorted((p for p in single if p["cpu"] >= 0.5), key=lambda p: -p["cpu"])[:size]
+    by_mem = sorted(single, key=lambda p: -p["mem"])[:size]
+    seen, out = set(), []
+    for p in by_cpu + by_mem:
+        if p["pid"] not in seen:
+            seen.add(p["pid"])
+            out.append(p)
+    return out
 
 
 def snapshot():
     out = measure()
     out.update({
         "takenAt": int(time.time()), "system": system(), "memory": memory(), "disks": disks(),
-        "temperature": temperature(), "gpus": gpus(), "containers": containers(), "failed": failed_units(),
+        "temperature": temperature(), "gpus": gpus(), "containers": containers(),
+        "failed": sorted(set(failed_units()) | set(failed_units("user")))[:20], "failedUser": failed_units("user"),
+        "tmux": tmux_sessions(),
     })
     return out
 

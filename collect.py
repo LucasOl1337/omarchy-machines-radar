@@ -3,7 +3,7 @@
 
 Each machine runs probe.py: locally with Python, or remotely through
 `ssh ALIAS python3 -` with the script on stdin, so nothing is installed on the
-servers. SSH uses the aliases and keys already in ~/.ssh/config, in batch mode.
+servers. Android phones are read over adb by android.py. SSH uses the aliases and keys already in ~/.ssh/config, in batch mode.
 The state file keeps the last good snapshot of each machine plus about an hour
 of CPU and memory history, and the tailnet list from `tailscale status`.
 """
@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 CONFIG = Path(os.environ.get("OMARCHY_MACHINES_CONFIG", Path.home() / ".config/omarchy-machines/machines.json"))
 STATE_DIR = Path(os.environ.get("OMARCHY_MACHINES_STATE", Path.home() / ".local/state/omarchy-trackers/machines"))
 STATUS = STATE_DIR / "status.json"
@@ -55,6 +56,9 @@ def ssh_target(alias):
 
 
 def probe(machine):
+    if machine.get("adb"):
+        import android
+        return android.probe(machine["adb"])
     script = (HERE / "probe.py").read_text()
     if machine.get("local"):
         command = [sys.executable, "-"]
@@ -132,9 +136,10 @@ def collect():
         out.append({
             "id": machine["id"], "name": machine.get("name", machine["id"]),
             "role": machine.get("role", ""), "provider": machine.get("provider", ""),
-            "kind": machine.get("kind", "local" if machine.get("local") else "vps"),
-            "ssh": machine.get("ssh", ""), "local": bool(machine.get("local")),
-            "target": "este PC" if machine.get("local") else ssh_target(machine["ssh"]),
+            "kind": machine.get("kind", "local" if machine.get("local") or machine.get("adb") else "vps"),
+            "ssh": machine.get("ssh", ""), "adb": machine.get("adb", ""), "local": bool(machine.get("local")),
+            "readonly": bool(machine.get("readonly")),
+            "target": "este PC" if machine.get("local") else "adb " + machine["adb"] if machine.get("adb") else ssh_target(machine["ssh"]),
             "online": data is not None, "error": error, "latencyMs": latency,
             "probedAt": now if data else before.get("probedAt"),
             "data": snapshot, "history": history,

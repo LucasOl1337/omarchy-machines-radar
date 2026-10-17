@@ -6,7 +6,19 @@ O ícone de servidor abre uma grade com CPU, RAM, o disco mais cheio e swap, cad
 
 ![Visão geral com um card por máquina](docs/visao-geral.png)
 
-Clicar num card abre o detalhe: processos que mais gastam CPU e memória (agrupados pelo nome), containers do Docker, agentes de IA abertos, GPU, discos, rede e IO. Os botões abrem um terminal com `ssh` na máquina, abrem o `btop` dela ou copiam o comando. A aba Tailnet lista todos os aparelhos da sua rede Tailscale, com o caminho de cada um (direto ou relay).
+Clicar num card abre o detalhe: processos que mais gastam CPU e memória (agrupados pelo nome), containers do Docker, agentes de IA abertos, GPU, discos, rede e IO. A aba Tailnet lista todos os aparelhos da sua rede Tailscale, com o caminho de cada um (direto ou relay).
+
+No detalhe dá pra agir na máquina:
+
+- **Terminal**, **tmux** (entra ou cria a sessão `radar`, que sobrevive se a janela fechar), **btop** e copiar o comando de acesso.
+- **Terminais abertos**: cada pseudo-terminal com dono, o programa da frente (agente marcado em negrito), há quanto tempo está parado e aberto. *Parar* manda SIGTERM só no programa da frente; *fechar* manda SIGHUP no terminal inteiro.
+- **Sessões tmux** de todos os sockets do usuário, com *entrar* e *encerrar*.
+- **Processos** um a um, com filtro por nome: *encerrar* (SIGTERM) e *matar* (SIGKILL).
+- **Serviços falhando**: *log* abre o `journalctl -f` numa janela e *reiniciar* reinicia a unidade.
+
+Tudo que encerra ou reinicia pede um segundo clique em até 4 s. As ações passam por `act.py` com argumentos simples: ele acha a máquina no cadastro, monta o comando sem shell do painel e confere que o PID ainda tem o nome mostrado, então um PID reciclado nunca é atingido. Máquina com `"readonly": true` (servidor dividido com outra equipe, por exemplo) só observa e abre terminais.
+
+Celular Android entra pelo `adb`: CPU, RAM, swap, armazenamento, bateria e apps. Os botões abrem `adb shell`, `top` e a tela pelo `scrcpy`; *fechar app* usa `am force-stop`.
 
 ![Detalhe de uma VPS](docs/detalhe.png)
 
@@ -32,12 +44,14 @@ Cada máquina do cadastro tem:
 - `provider` e `role` (opcionais): selo do provedor e uma linha dizendo pra que a máquina serve.
 - `kind` (opcional): `local` pra notebook ou desktop. Desligado vira cinza, sem alarme. VPS fora do ar fica vermelha.
 - `tailnet` (opcional): nome do aparelho no Tailscale, quando difere do hostname.
+- `adb` (em vez de `ssh`): serial do celular Android no `adb devices`, por exemplo `IP:5555`. Use com `kind: "local"`, pra celular desligado não virar alarme.
+- `readonly` (opcional): `true` esconde encerrar, matar e reiniciar; o radar só observa.
 
 Sem cadastro, o radar usa o `machines.example.json`.
 
 ## Como lê
 
-A cada minuto o timer roda `collect.py`, que manda `probe.py` pela entrada padrão de `ssh ALIAS python3 -` pra todas as máquinas em paralelo (só biblioteca padrão; na máquina local roda direto). O probe mede CPU, IO e rede numa janela de um segundo em `/proc` e lê memória, discos, temperatura, `docker ps`/`docker stats`, `systemctl --failed`, `nvidia-smi` e `tailscale ip`. Uma máquina sem resposta mantém a última leitura boa, marcada com a idade e o erro.
+A cada minuto o timer roda `collect.py`, que manda `probe.py` pela entrada padrão de `ssh ALIAS python3 -` pra todas as máquinas em paralelo (só biblioteca padrão; na máquina local roda direto). O probe mede CPU, IO e rede numa janela de um segundo em `/proc` e lê memória, discos, temperatura, `docker ps`/`docker stats`, `systemctl --failed`, `nvidia-smi`, `tailscale ip`, os pseudo-terminais em `/proc` e `tmux list-sessions`. Processos vão só pelo nome, nunca pela linha de comando. O celular é lido por `android.py` numa única chamada `adb shell`. Uma máquina sem resposta mantém a última leitura boa, marcada com a idade e o erro.
 
 Disco que guarda imagens montadas em loop (um disco por pessoa numa VPS dividida, por exemplo) conta o espaço delas como reservado, não usado: a porcentagem e o alarme olham só a parte do sistema, e cada imagem aparece como disco próprio.
 
