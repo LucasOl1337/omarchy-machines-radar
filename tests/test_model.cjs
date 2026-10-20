@@ -92,7 +92,7 @@ test('android load average does not raise a load alert', () => {
   assert.equal(v.alerts.length, 0);
 });
 
-test('a full but quiet swap stays green; pressure, swapping or no RAM left warn', () => {
+test('a full but quiet swap stays green; pressure or no RAM left warn', () => {
   const mem = (changes) => ({total: 16 * GB, used: 10 * GB, available: 6 * GB, swapTotal: 4 * GB, swapUsed: 4 * GB, pressure: 0, ...changes});
   const view = (memory, swap = {in: 0, out: 0}) => M.machineView(machine({data: data({memory, swap})}), now);
   let v = view(mem());
@@ -104,7 +104,7 @@ test('a full but quiet swap stays green; pressure, swapping or no RAM left warn'
   assert.match(v.alerts[0].text, /pressão/);
   assert.equal(view(mem({pressure: 25})).alerts[0].tone, 'red');
   assert.ok(view(mem({available: 1 * GB, used: 15 * GB})).alerts.some(a => /OOM/.test(a.text)));
-  assert.match(view(mem(), {in: 2 * 1048576, out: 0}).alerts[0].text, /trocando/);
+  assert.equal(view(mem(), {in: 5 * 1048576, out: 0}).alerts.length, 0);
 });
 test('probes without PSI keep the old swap percentage rule', () => {
   const v = M.machineView(machine({data: data({memory: {total: 16 * GB, used: 4 * GB, available: 12 * GB, swapTotal: 4 * GB, swapUsed: 4 * GB}})}), now);
