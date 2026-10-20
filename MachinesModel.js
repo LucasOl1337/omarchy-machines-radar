@@ -7,6 +7,22 @@ var STALE_MS = 5 * 60000;
 // A filling disk is something to plan for, not an emergency: it never turns red.
 var LIMITS = {cpu: [70, 90], memory: [75, 90], disk: [75, Infinity], swap: [50, 80]};
 var DISK_ALERT = 85;
+// Memory pressure (PSI some avg60, % of the last minute with a task waiting for RAM): [yellow, red].
+// A full swap with no pressure is just idle pages parked there and stays green.
+var PRESSURE = [2, 10];
+var SWAP_BUSY = 1048576; // bytes/s in + out
+
+// Swap tone from what actually hurts: memory pressure, heavy swapping, or a full swap with no RAM left.
+// Probes without PSI fall back to the used percentage.
+function swapTone(d) {
+  var mem = d.memory || {}, io = d.swap || {};
+  var pct = percentOf(mem.swapUsed, mem.swapTotal);
+  if (typeof mem.pressure !== "number") return tone("swap", pct);
+  if (mem.pressure >= PRESSURE[1]) return "red";
+  var busy = (io.in || 0) + (io.out || 0) >= SWAP_BUSY;
+  var cornered = pct >= 95 && mem.available < .1 * mem.total;
+  return mem.pressure >= PRESSURE[0] || busy || cornered ? "yellow" : "green";
+}
 
 function tone(kind, percent) {
   if (typeof percent !== "number" || !isFinite(percent)) return "none";
@@ -84,8 +100,12 @@ function metrics(d) {
   }
   if (mem.swapTotal > 0) {
     var swapPct = percentOf(mem.swapUsed, mem.swapTotal);
-    out.push({key: "swap", label: "Swap", percent: swapPct, tone: tone("swap", swapPct),
-              detail: gb(mem.swapUsed) + " / " + gb(mem.swapTotal) + " GB", value: Math.round(swapPct || 0) + "%"});
+    var io = d.swap || {};
+    out.push({key: "swap", label: "Swap", percent: swapPct, tone: swapTone(d),
+              detail: gb(mem.swapUsed) + " / " + gb(mem.swapTotal) + " GB"
+                + (typeof mem.pressure === "number" ? " · pressão " + mem.pressure.toFixed(1) + "%" : "")
+                + ((io.in || 0) + (io.out || 0) > 0 ? " · entra " + rate(io.in) + ", sai " + rate(io.out) : ""),
+              value: Math.round(swapPct || 0) + "%"});
   }
   return out;
 }
@@ -106,7 +126,11 @@ function alerts(machine, d, stale) {
   var memPct = percentOf(mem.used, mem.total);
   if (memPct >= LIMITS.memory[1]) out.push({text: "Memória em " + Math.round(memPct) + "%", tone: "red"});
   var swapPct = percentOf(mem.swapUsed, mem.swapTotal);
-  if (swapPct >= LIMITS.swap[1]) out.push({text: "Swap em " + Math.round(swapPct) + "%", tone: "yellow"});
+  if (typeof mem.pressure === "number") {
+    if (mem.pressure >= PRESSURE[0]) out.push({text: "Memória sob pressão: " + Math.round(mem.pressure) + "% do último minuto esperando RAM", tone: mem.pressure >= PRESSURE[1] ? "red" : "yellow"});
+    else if (swapPct >= 95 && mem.available < .1 * mem.total) out.push({text: "Swap cheia e só " + gb(mem.available) + " GB de RAM livre: um pico vira OOM", tone: "yellow"});
+    else if (swapTone(d) === "yellow") out.push({text: "Swap trocando " + rate((d.swap || {}).in + (d.swap || {}).out), tone: "yellow"});
+  } else if (swapPct >= LIMITS.swap[1]) out.push({text: "Swap em " + Math.round(swapPct) + "%", tone: "yellow"});
   // Android counts uninterruptible kernel threads in the load average: it says nothing there.
   if (d.platform !== "android" && cpu.load && cpu.cores && cpu.load[1] > 1.5 * cpu.cores) out.push({text: "Carga " + cpu.load[1].toFixed(1) + " para " + cpu.cores + " núcleos", tone: "yellow"});
   if (cpu.steal >= 10) out.push({text: "Steal de " + Math.round(cpu.steal) + "%: o host da VPS está disputado", tone: "yellow"});

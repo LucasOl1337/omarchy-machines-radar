@@ -159,6 +159,19 @@ def disk_bytes():
     return rd, wr
 
 
+def swap_pages():
+    v = dict(line.split() for line in read("/proc/vmstat").splitlines() if line.startswith("pswp"))
+    return int(v.get("pswpin", 0)), int(v.get("pswpout", 0))
+
+
+def memory_pressure():
+    """Share of the last minute some task stalled waiting for memory (PSI), or None without PSI."""
+    for line in read("/proc/pressure/memory").splitlines():
+        if line.startswith("some"):
+            return float(dict(f.split("=") for f in line.split()[1:])["avg60"])
+    return None
+
+
 def memory():
     m = {}
     for line in read("/proc/meminfo").splitlines():
@@ -169,6 +182,7 @@ def memory():
         "total": total, "used": total - available, "available": available,
         "cache": m.get("Cached", 0) + m.get("Buffers", 0),
         "swapTotal": m.get("SwapTotal", 0), "swapUsed": m.get("SwapTotal", 0) - m.get("SwapFree", 0),
+        "pressure": memory_pressure(),
     }
 
 
@@ -315,9 +329,9 @@ def system():
 
 def measure(window=1.0):
     t0 = time.monotonic()
-    c0, p0, n0, d0 = cpu_ticks(), processes(), net_bytes(), disk_bytes()
+    c0, p0, n0, d0, s0 = cpu_ticks(), processes(), net_bytes(), disk_bytes(), swap_pages()
     time.sleep(window)
-    c1, p1, n1, d1 = cpu_ticks(), processes(), net_bytes(), disk_bytes()
+    c1, p1, n1, d1, s1 = cpu_ticks(), processes(), net_bytes(), disk_bytes(), swap_pages()
     dt = time.monotonic() - t0
     delta = [b - a for a, b in zip(c0, c1)]
     total = sum(delta) or 1
@@ -349,6 +363,8 @@ def measure(window=1.0):
         },
         "net": {"rx": max(0, (n1[0] - n0[0]) / dt), "tx": max(0, (n1[1] - n0[1]) / dt)},
         "io": {"read": max(0, (d1[0] - d0[0]) / dt), "write": max(0, (d1[1] - d0[1]) / dt)},
+        # Pages moved in and out of swap, in bytes/s: a full but quiet swap costs nothing.
+        "swap": {"in": max(0, (s1[0] - s0[0]) * PAGE / dt), "out": max(0, (s1[1] - s0[1]) * PAGE / dt)},
         "processes": {
             "total": len(p1), "running": running,
             "topCpu": sorted((g for g in items if g["cpu"] >= 0.5), key=lambda g: -g["cpu"])[:10],
