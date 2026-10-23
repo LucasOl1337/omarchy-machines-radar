@@ -4,7 +4,7 @@
 
 Junta o que entrou desde a v1.0.1 (1.1.0, 1.1.1 e 1.2.0, que não ganharam release própria) e a aba Total.
 
-![Aba Total](release.png)
+![Aba Total](https://github.com/LucasOl1337/omarchy-machines-radar/releases/download/v1.3.0/release.png)
 
 ## Novidades
 
