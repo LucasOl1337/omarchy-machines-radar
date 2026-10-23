@@ -3,7 +3,9 @@
 
 Each machine runs probe.py: locally with Python, or remotely through
 `ssh ALIAS python3 -` with the script on stdin, so nothing is installed on the
-servers. Android phones are read over adb by android.py. SSH uses the aliases and keys already in ~/.ssh/config, in batch mode.
+servers. Android phones are read over adb by android.py, and machines behind a
+provider API (Portainer Swarm nodes, Railway projects) by cloud.py. SSH uses
+the aliases and keys already in ~/.ssh/config, in batch mode.
 The state file keeps the last good snapshot of each machine plus about an hour
 of CPU and memory history, and the tailnet list from `tailscale status`.
 """
@@ -55,7 +57,26 @@ def ssh_target(alias):
     return fields["user"] + "@" + host if fields.get("user") else host
 
 
+def api_kind(machine):
+    return "portainer" if machine.get("portainer") else "railway" if machine.get("railway") else ""
+
+
+def target(machine):
+    if machine.get("local"):
+        return "este PC"
+    if machine.get("adb"):
+        return "adb " + machine["adb"]
+    if machine.get("portainer"):
+        return "Portainer · " + machine["portainer"]["node"]
+    if machine.get("railway"):
+        return "Railway · " + (machine["railway"].get("project") or "conta")
+    return ssh_target(machine["ssh"])
+
+
 def probe(machine):
+    if api_kind(machine):
+        import cloud
+        return cloud.probe(machine)
     if machine.get("adb"):
         import android
         return android.probe(machine["adb"])
@@ -138,8 +159,8 @@ def collect():
             "role": machine.get("role", ""), "provider": machine.get("provider", ""),
             "kind": machine.get("kind", "local" if machine.get("local") or machine.get("adb") else "vps"),
             "ssh": machine.get("ssh", ""), "adb": machine.get("adb", ""), "local": bool(machine.get("local")),
-            "readonly": bool(machine.get("readonly")),
-            "target": "este PC" if machine.get("local") else "adb " + machine["adb"] if machine.get("adb") else ssh_target(machine["ssh"]),
+            "readonly": bool(machine.get("readonly")), "api": api_kind(machine), "group": machine.get("group", ""),
+            "target": target(machine),
             "online": data is not None, "error": error, "latencyMs": latency,
             "probedAt": now if data else before.get("probedAt"),
             "data": snapshot, "history": history,

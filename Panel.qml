@@ -18,7 +18,7 @@ Panel {
     function toggle(): void { root.toggle() }
     function select(id: string): void { content.tab = id }
     function diagnostics(): string {
-      return JSON.stringify({version: "1.1.0", sourceUrl: Qt.resolvedUrl("Panel.qml").toString(), tab: content.tab, columns: content.columns,
+      return JSON.stringify({version: "1.2.0", sourceUrl: Qt.resolvedUrl("Panel.qml").toString(), tab: content.tab, columns: content.columns,
                              machines: summary.machines.map(m => ({id: m.id, state: m.state, online: m.online})), updatedAt: root.snapshot.updatedAt})
     }
   }

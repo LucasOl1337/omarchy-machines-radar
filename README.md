@@ -20,6 +20,11 @@ Tudo que encerra ou reinicia pede um segundo clique em até 4 s. As ações pass
 
 Celular Android entra pelo `adb`: CPU, RAM, swap, armazenamento, bateria e apps. Os botões abrem `adb shell`, `top` e a tela pelo `scrcpy`; *fechar app* usa `am force-stop`.
 
+Máquinas sem SSH entram pela API do provedor, só pra observar:
+
+- **Nó de Docker Swarm pelo Portainer**: CPU, RAM, carga, pressão e disco do próprio nó (lidos de dentro de um container que já roda nele, porque `/proc` e a raiz são do host), os serviços do nó com a memória de cada um e as tarefas que deviam rodar e não rodam. Com token da Hetzner Cloud, a rede vem das métricas dela. Os nós de um mesmo cluster dividem um chip (`group`) que abre só os cards deles.
+- **Projeto Railway**: vCPU e memória usados contra o limite dos serviços no ar, rede, volumes como discos e cada serviço com o estado do último deploy; deploy que falhou nas últimas 24 h vira aviso.
+
 ![Detalhe de uma VPS](docs/detalhe.png)
 
 Novidades de cada versão em [docs/releases](docs/releases/).
@@ -46,12 +51,17 @@ Cada máquina do cadastro tem:
 - `tailnet` (opcional): nome do aparelho no Tailscale, quando difere do hostname.
 - `adb` (em vez de `ssh`): serial do celular Android no `adb devices`, por exemplo `IP:5555`. Use com `kind: "local"`, pra celular desligado não virar alarme.
 - `readonly` (opcional): `true` esconde encerrar, matar e reiniciar; o radar só observa.
+- `portainer` (em vez de `ssh`): `{"env": "PREFIXO", "node": "hostname do nó", "endpoint": 1}`. O radar lê `PREFIXO_PORTAINER_URL`, `PREFIXO_PORTAINER_TOKEN` e, se houver, `PREFIXO_HCLOUD_TOKEN` (rede).
+- `railway` (em vez de `ssh`): `{"project": "nome ou id", "environment": "production"}`; sem `project`, soma todos os projetos que o token vê. Token de conta em `RAILWAY_TOKEN` (token de workspace não lista projetos).
+- `group` (opcional): nome do cluster; máquinas com o mesmo grupo viram um chip só.
+
+Tokens das máquinas por API ficam em `~/.config/omarchy-machines/secrets.env` (`CHAVE=valor`, modo 0600), nunca no cadastro. Os tokens só precisam de leitura: o radar não reinicia nem para nada por API.
 
 Sem cadastro, o radar usa o `machines.example.json`.
 
 ## Como lê
 
-A cada minuto o timer roda `collect.py`, que manda `probe.py` pela entrada padrão de `ssh ALIAS python3 -` pra todas as máquinas em paralelo (só biblioteca padrão; na máquina local roda direto). O probe mede CPU, IO e rede numa janela de um segundo em `/proc` e lê memória, discos, temperatura, `docker ps`/`docker stats`, `systemctl --failed`, `nvidia-smi`, `tailscale ip`, os pseudo-terminais em `/proc` e `tmux list-sessions`. Processos vão só pelo nome, nunca pela linha de comando. O celular é lido por `android.py` numa única chamada `adb shell`. Uma máquina sem resposta mantém a última leitura boa, marcada com a idade e o erro.
+A cada minuto o timer roda `collect.py`, que manda `probe.py` pela entrada padrão de `ssh ALIAS python3 -` pra todas as máquinas em paralelo (só biblioteca padrão; na máquina local roda direto). O probe mede CPU, IO e rede numa janela de um segundo em `/proc` e lê memória, discos, temperatura, `docker ps`/`docker stats`, `systemctl --failed`, `nvidia-smi`, `tailscale ip`, os pseudo-terminais em `/proc` e `tmux list-sessions`. Processos vão só pelo nome, nunca pela linha de comando. O celular é lido por `android.py` numa única chamada `adb shell`, e as máquinas por API por `cloud.py` (Portainer: um `exec` de `sh` com `/proc/stat` duas vezes, `meminfo`, `loadavg`, `df` e PSI num container do nó; Railway: GraphQL de projetos e métricas). Uma máquina sem resposta mantém a última leitura boa, marcada com a idade e o erro.
 
 Disco que guarda imagens montadas em loop (um disco por pessoa numa VPS dividida, por exemplo) conta o espaço delas como reservado, não usado: a porcentagem e o alarme olham só a parte do sistema, e cada imagem aparece como disco próprio.
 
@@ -62,6 +72,7 @@ Processos aparecem só pelo nome curto (`comm`), nunca pela linha de comando, pr
 - Fonte: diretório do clone deste repositório.
 - Plugin ativo: `~/.config/omarchy/plugins/lol.machines/`.
 - Cadastro: `~/.config/omarchy-machines/machines.json`.
+- Tokens das máquinas por API: `~/.config/omarchy-machines/secrets.env`, modo 0600 (ou o caminho em `OMARCHY_MACHINES_SECRETS`).
 - Estado: `~/.local/state/omarchy-trackers/machines/status.json`, modo 0600, com cerca de uma hora de histórico.
 - Timer: `omarchy-machines.timer`, uma leitura por minuto depois da anterior.
 

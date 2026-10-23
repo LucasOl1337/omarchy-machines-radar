@@ -47,7 +47,7 @@ def install():
     destination = Path.home() / '.config/omarchy/plugins/lol.machines'
     subprocess.run(['omarchy-plugin-validate', str(source)], check=True)
     generation = deploy_ui(source, destination)
-    for name in ('collect.py', 'probe.py', 'android.py', 'act.py', 'machines.example.json'):
+    for name in ('collect.py', 'probe.py', 'android.py', 'cloud.py', 'act.py', 'machines.example.json'):
         shutil.copy2(source / name, destination / name)
     units = Path.home() / '.config/systemd/user'
     units.mkdir(parents=True, exist_ok=True)

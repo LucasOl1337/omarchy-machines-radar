@@ -83,8 +83,10 @@ function metrics(d) {
   var out = [];
   var cpu = d.cpu || {};
   var load = cpu.load || [];
+  // Railway has no load average, only vCPU used against the services' limits.
   out.push({key: "cpu", label: "CPU", percent: cpu.percent, tone: tone("cpu", cpu.percent),
-            detail: "carga " + (load[0] !== undefined ? load[0].toFixed(2) : "—") + " · " + (cpu.cores || "?") + " núcleos",
+            detail: d.platform === "railway" ? (cpu.used || 0).toFixed(2) + " de " + (cpu.cores || "?") + " vCPU de limite"
+              : "carga " + (load[0] !== undefined ? load[0].toFixed(2) : "—") + " · " + (cpu.cores || "?") + " núcleos",
             value: Math.round(cpu.percent || 0) + "%"});
   var mem = d.memory || {};
   var memPct = percentOf(mem.used, mem.total);
@@ -158,7 +160,7 @@ function machineView(machine, now) {
   var facts = [];
   if (d) {
     facts.push("↓ " + rate(d.net.rx) + "  ↑ " + rate(d.net.tx));
-    if (d.containers) facts.push(running + "/" + containers.length + " containers");
+    if (d.containers) facts.push(running + "/" + containers.length + (d.platform === "railway" ? " serviços no ar" : " containers"));
     if (agentCount) facts.push(agentCount + (agentCount === 1 ? " agente" : " agentes"));
     if (d.temperature) facts.push(Math.round(d.temperature) + "°C");
     if (d.battery && d.battery.level !== null) facts.push("bateria " + d.battery.level + "%" + (d.battery.plugged ? " ⚡" : ""));
@@ -173,7 +175,8 @@ function machineView(machine, now) {
     ageText: machine.probedAt ? duration((now - machine.probedAt * 1000) / 1000) : "",
     host: sys.hostname || "", ip: (machine.tailnet && machine.tailnet.ip) || sys.tailscaleIp || "",
     tailnet: machine.tailnet,
-    summary: d ? [sys.os, sys.cores ? sys.cores + " núcleos" : "", sys.uptime ? "ligado há " + duration(sys.uptime) : ""].filter(Boolean).join(" · ") : "Ainda sem leitura",
+    api: machine.api || "", group: machine.group || "",
+    summary: d ? [sys.os, sys.cores && d.platform !== "railway" ? sys.cores + " núcleos" : "", sys.uptime ? "ligado há " + duration(sys.uptime) : ""].filter(Boolean).join(" · ") : "Ainda sem leitura",
     metrics: list, alerts: warnings, facts: facts.join(" · "),
     cpuHistory: (machine.history || []).map(p => p[1]),
     memHistory: (machine.history || []).map(p => p[2]),
@@ -209,10 +212,24 @@ function actCommand(script, verb, id, args) {
 
 var STATE_ORDER = {down: 0, red: 1, yellow: 2, ok: 3, off: 4};
 
+// Machines sharing a "group" (the nodes of one cluster) get one tab, with the worst state.
+function groupRows(list) {
+  var out = [];
+  list.forEach(function(m) {
+    if (!m.group) return;
+    var g = out.find(x => x.name === m.group);
+    if (!g) out.push(g = {id: "group:" + m.group, name: m.group, count: 0, state: "off"});
+    g.count++;
+    if (STATE_ORDER[m.state] < STATE_ORDER[g.state]) g.state = m.state;
+  });
+  return out;
+}
+
 function buildMachines(snapshot, now) {
   var list = ((snapshot && snapshot.machines) || []).map(m => machineView(m, now));
   return {
     machines: list,
+    groups: groupRows(list),
     online: list.filter(m => m.online).length,
     attention: list.filter(m => m.state === "down" || m.state === "red" || m.state === "yellow").length
   };
@@ -226,4 +243,4 @@ function peerView(peer, now) {
   };
 }
 
-if (typeof module !== "undefined") module.exports = {terminalRows: terminalRows, procRows: procRows, actCommand: actCommand, tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};
+if (typeof module !== "undefined") module.exports = {terminalRows: terminalRows, procRows: procRows, actCommand: actCommand, tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, groupRows: groupRows, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};

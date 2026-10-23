@@ -189,6 +189,8 @@ def main(argv):
     # A shared host (someone else's server) is watch-only: open things, never stop them.
     if m.get("readonly") and (verb in CHANGES or (verb == "unit" and args[:1] == ["restart"])):
         done(False, m.get("name", m["id"]) + " é só leitura no radar")
+    if not (m.get("local") or m.get("ssh") or m.get("adb")):
+        done(False, m.get("name", m["id"]) + " é lida por API, sem shell pra abrir")
     if verb == "open" and args:
         open_(m, args[0], args[1] if len(args) > 1 else "", args[2] if len(args) > 2 else "default")
     if verb == "kill" and len(args) >= 2:

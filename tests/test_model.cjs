@@ -111,3 +111,17 @@ test('probes without PSI keep the old swap percentage rule', () => {
   assert.equal(v.metrics.find(m => m.key === 'swap').tone, 'red');
   assert.match(v.alerts[0].text, /Swap em 100%/);
 });
+test('api machines carry their kind and group, and Railway shows vCPU instead of load', () => {
+  const v = M.machineView(machine({api: 'railway', data: data({platform: 'railway', cpu: {percent: 1, iowait: 0, steal: 0, load: [0, 0, 0], cores: 24, used: 0.02},
+    containers: [{name: 'a', state: 'running'}, {name: 'b', state: 'exited'}]})}), now);
+  assert.equal(v.api, 'railway');
+  assert.match(v.metrics[0].detail, /0\.02 de 24 vCPU/);
+  assert.match(v.facts, /1\/2 serviços no ar/);
+  assert.doesNotMatch(v.summary, /núcleos/);
+  assert.equal(v.state, 'ok');
+});
+test('cluster nodes share one group row with the worst state', () => {
+  const s = M.buildMachines({machines: [machine({id: 'a', group: 'NexUnio'}), machine({id: 'x'}),
+    machine({id: 'b', group: 'NexUnio', online: false, data: null})]}, now);
+  assert.deepEqual(s.groups, [{id: 'group:NexUnio', name: 'NexUnio', count: 2, state: 'down'}]);
+});

@@ -8,15 +8,19 @@ import "MachinesModel.js" as MachinesModel
 Item {
   id: root
   property var snapshot: ({machines: []})
-  property var summary: ({machines: [], online: 0, attention: 0})
+  property var summary: ({machines: [], groups: [], online: 0, attention: 0})
   property double now: Date.now()
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property string tab: "all"
   readonly property var tabs: [{id: "all", name: "Todas", count: summary.machines.length}]
-    .concat(summary.machines.map(m => ({id: m.id, name: m.name, state: m.state})))
+    // A cluster's nodes share one chip, where its first node would be; the chip opens their cards.
+    .concat(summary.machines.filter((m, i) => !m.group || summary.machines.findIndex(x => x.group === m.group) === i)
+      .map(m => m.group ? (summary.groups || []).find(g => g.name === m.group) : {id: m.id, name: m.name, state: m.state}))
     .concat([{id: "tailnet", name: "Tailnet", count: peers.length}])
   readonly property var selected: summary.machines.find(m => m.id === tab) || null
+  readonly property string groupTab: tab.indexOf("group:") === 0 ? tab.slice(6) : ""
+  readonly property var cards: tab === "all" ? summary.machines : groupTab ? summary.machines.filter(m => m.group === groupTab) : []
   readonly property var peers: ((snapshot.tailnet || {}).peers || []).map(p => MachinesModel.peerView(p, now))
   readonly property real gap: Style.space(10)
   readonly property int columns: Math.max(1, Math.floor((width + gap) / (Style.space(400) + gap)))
@@ -76,7 +80,7 @@ Item {
   }
   property string killFilter: ""
   onTabChanged: { list.contentY = 0; savePrefs() }
-  onTabsChanged: if (prefsLoaded && !tabs.some(t => t.id === tab)) tab = "all"
+  onTabsChanged: if (prefsLoaded && !tabs.some(t => t.id === tab) && !summary.machines.some(m => m.id === tab)) tab = "all"
   Process { id: actions }
 
   property bool prefsLoaded: false
@@ -265,7 +269,7 @@ Item {
         delegate: Chip {
           required property var modelData
           label: modelData.name + (modelData.count !== undefined ? "  " + modelData.count : "")
-          selected: root.tab === modelData.id
+          selected: root.tab === modelData.id || (!!root.selected && "group:" + root.selected.group === modelData.id)
           dot: modelData.state ? root.stateColor(modelData.state) : "transparent"
           onClicked: root.tab = modelData.id
         }
@@ -279,17 +283,17 @@ Item {
     anchors.bottom: footer.top; anchors.bottomMargin: Style.space(8)
     anchors.left: parent.left; anchors.right: parent.right
     clip: true; contentWidth: width
-    contentHeight: root.tab === "all" ? grid.implicitHeight : root.tab === "tailnet" ? tailnetList.implicitHeight : detail.implicitHeight
+    contentHeight: root.cards.length ? grid.implicitHeight : root.tab === "tailnet" ? tailnetList.implicitHeight : detail.implicitHeight
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
     // ---------- overview: one card per machine ----------
     Grid {
       id: grid
-      visible: root.tab === "all"
+      visible: root.cards.length > 0
       columns: root.columns; spacing: root.gap
       Repeater {
-        model: root.tab === "all" ? root.summary.machines : []
+        model: root.cards
         delegate: Rectangle {
           id: card
           required property var modelData
@@ -307,7 +311,7 @@ Item {
               Rectangle {
                 id: stateBox
                 width: Style.space(34); height: width; radius: Style.space(7); color: root.faint(.06)
-                Text { anchors.centerIn: parent; text: card.modelData.phone ? "" : card.modelData.local ? "" : ""; color: root.stateColor(card.modelData.state); font.family: root.fontFamily; font.pixelSize: Style.font.title }
+                Text { anchors.centerIn: parent; text: card.modelData.phone ? "" : card.modelData.local ? "" : card.modelData.api === "railway" ? "" : ""; color: root.stateColor(card.modelData.state); font.family: root.fontFamily; font.pixelSize: Style.font.title }
               }
               Column {
                 anchors.left: stateBox.right; anchors.leftMargin: Style.space(10); anchors.right: badges.left; anchors.rightMargin: Style.space(8)
@@ -356,7 +360,7 @@ Item {
       id: detail
       visible: root.selected !== null
       width: list.width - Style.space(10); spacing: Style.space(10)
-      readonly property var m: root.selected || ({metrics: [], alerts: [], cpuHistory: [], memHistory: [], terminals: [], tmux: [], procs: [], phone: false, readonly: false, data: null})
+      readonly property var m: root.selected || ({metrics: [], alerts: [], cpuHistory: [], memHistory: [], terminals: [], tmux: [], procs: [], phone: false, readonly: false, api: "", group: "", data: null})
       readonly property var d: m.data || ({})
       Item {
         width: parent.width; height: Style.space(40)
@@ -374,7 +378,9 @@ Item {
                    detail.m.tailnet ? (detail.m.tailnet.direct ? "direto" : detail.m.tailnet.relay ? "relay " + detail.m.tailnet.relay : "") : ""].filter(Boolean).join(" · ")
           }
         }
+        // Machines read through a provider API have no shell to open.
         Row {
+          visible: !detail.m.api
           anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(6)
           Action { label: "Terminal"; tip: detail.m.phone ? "adb shell no celular" : "shell novo na máquina"; onClicked: root.openShell(detail.m) }
           Action { visible: !detail.m.phone; label: "tmux"; tip: "entra (ou cria) a sessão tmux \"radar\": continua viva se a janela fechar"; onClicked: root.act(detail.m, "open", ["tmux", "radar"], true) }
@@ -399,14 +405,16 @@ Item {
           width: (parent.width - parent.spacing) * .5; spacing: Style.space(6)
           Repeater { model: detail.m.metrics; delegate: Meter { required property var modelData; width: parent.width; metric: modelData } }
           Label {
+            // Railway has no host to speak of, and a Swarm node's processes are its containers, listed beside.
+            visible: detail.m.api !== "railway"
             width: parent.width; opacity: .5
             text: detail.d.cpu ? "iowait " + detail.d.cpu.iowait + "% · steal " + detail.d.cpu.steal + "% · carga " + detail.d.cpu.load.map(x => x.toFixed(2)).join(" / ")
-              + " · " + detail.d.processes.total + " processos, " + detail.d.processes.running + " rodando" : ""
+              + (detail.m.api ? "" : " · " + detail.d.processes.total + " processos, " + detail.d.processes.running + " rodando") : ""
           }
           Label {
             width: parent.width; opacity: .5
-            text: detail.d.net ? "rede ↓ " + MachinesModel.bytes(detail.d.net.rx) + "/s ↑ " + MachinesModel.bytes(detail.d.net.tx) + "/s · disco lê "
-              + MachinesModel.bytes(detail.d.io.read) + "/s, grava " + MachinesModel.bytes(detail.d.io.write) + "/s"
+            text: detail.d.net ? "rede ↓ " + MachinesModel.bytes(detail.d.net.rx) + "/s ↑ " + MachinesModel.bytes(detail.d.net.tx) + "/s"
+              + (detail.m.api ? "" : " · disco lê " + MachinesModel.bytes(detail.d.io.read) + "/s, grava " + MachinesModel.bytes(detail.d.io.write) + "/s")
               + (detail.d.temperature ? " · " + Math.round(detail.d.temperature) + "°C" : "") : ""
           }
           Repeater {
@@ -444,9 +452,9 @@ Item {
               required property var modelData
               readonly property string scope: (detail.d.failedUser || []).indexOf(modelData) >= 0 ? "user" : "system"
               readonly property string key: "unit:" + detail.m.id + ":" + modelData
-              width: parent.width; label: MachinesModel.unitName(modelData); sub: scope === "user" ? "usuário" : "sistema"; dot: "#eab308"
-              Action { small: true; label: "log"; tip: "journalctl -f numa janela"; onClicked: root.act(detail.m, "unit", ["log", unitRow.modelData, unitRow.scope], true) }
-              Action { small: true; visible: !detail.m.readonly; label: "reiniciar"; danger: true; armed: root.isPending(unitRow.key)
+              width: parent.width; label: MachinesModel.unitName(modelData); sub: detail.m.api === "railway" ? "deploy" : detail.m.api ? "Swarm" : scope === "user" ? "usuário" : "sistema"; dot: "#eab308"
+              Action { small: true; visible: !detail.m.api; label: "log"; tip: "journalctl -f numa janela"; onClicked: root.act(detail.m, "unit", ["log", unitRow.modelData, unitRow.scope], true) }
+              Action { small: true; visible: !detail.m.readonly && !detail.m.api; label: "reiniciar"; danger: true; armed: root.isPending(unitRow.key)
                        onClicked: root.confirmAct(detail.m, unitRow.key, "", "unit", ["restart", unitRow.modelData, unitRow.scope]) }
             }
           }
@@ -454,9 +462,10 @@ Item {
         // Right: processes, containers, agents.
         Column {
           width: (parent.width - parent.spacing) * .5; spacing: Style.space(4)
-          Section { text: "PROCESSOS POR CPU (% DE UM NÚCLEO)" }
+          // API machines list their containers or services below instead of processes.
+          Section { visible: !detail.m.api; text: "PROCESSOS POR CPU (% DE UM NÚCLEO)" }
           Repeater {
-            model: detail.d.processes ? detail.d.processes.topCpu.slice(0, 8) : []
+            model: detail.d.processes && !detail.m.api ? detail.d.processes.topCpu.slice(0, 8) : []
             delegate: Item {
               required property var modelData
               width: parent.width; height: Style.space(18)
@@ -464,10 +473,10 @@ Item {
               Label { anchors.right: parent.right; text: modelData.cpu.toFixed(1) + "%  ·  " + MachinesModel.bytes(modelData.mem); opacity: .7 }
             }
           }
-          Label { visible: !!detail.d.processes && !detail.d.processes.topCpu.length; text: "nada acima de 0,5% agora"; opacity: .45 }
-          Section { text: "PROCESSOS POR MEMÓRIA" }
+          Label { visible: !detail.m.api && !!detail.d.processes && !detail.d.processes.topCpu.length; text: "nada acima de 0,5% agora"; opacity: .45 }
+          Section { visible: !detail.m.api; text: "PROCESSOS POR MEMÓRIA" }
           Repeater {
-            model: detail.d.processes ? detail.d.processes.topMem.slice(0, 8) : []
+            model: detail.d.processes && !detail.m.api ? detail.d.processes.topMem.slice(0, 8) : []
             delegate: Item {
               required property var modelData
               width: parent.width; height: Style.space(18)
@@ -477,7 +486,7 @@ Item {
           }
           Section {
             visible: !!detail.d.containers
-            text: "CONTAINERS · " + (detail.d.containers || []).filter(c => c.state === "running").length + " de " + (detail.d.containers || []).length + " rodando"
+            text: (detail.m.api === "railway" ? "SERVIÇOS · " : "CONTAINERS · ") + (detail.d.containers || []).filter(c => c.state === "running").length + " de " + (detail.d.containers || []).length + (detail.m.api === "railway" ? " no ar" : " rodando")
           }
           Repeater {
             model: (detail.d.containers || []).slice(0, 16)
@@ -489,7 +498,7 @@ Item {
               Label { x: Style.space(12); width: parent.width * .55; text: modelData.name; opacity: modelData.state === "running" ? 1 : .5 }
               Label {
                 anchors.right: parent.right; opacity: .6
-                text: modelData.state === "running" ? (modelData.cpu !== null ? modelData.cpu.toFixed(1) + "%" : "") + (modelData.mem ? "  ·  " + MachinesModel.bytes(modelData.mem) : "") : (modelData.status || modelData.state)
+                text: modelData.state === "running" ? [modelData.cpu !== null && modelData.cpu !== undefined ? modelData.cpu.toFixed(1) + "%" : "", modelData.mem ? MachinesModel.bytes(modelData.mem) : ""].filter(Boolean).join("  ·  ") : (modelData.status || modelData.state)
               }
             }
           }
@@ -503,9 +512,9 @@ Item {
       }
 
       // ---------- terminals, tmux and processes: full width, with actions ----------
-      Rectangle { visible: !!detail.m.data && !detail.m.phone; width: parent.width; height: 1; color: root.faint(.08) }
+      Rectangle { visible: !!detail.m.data && !detail.m.phone && !detail.m.api; width: parent.width; height: 1; color: root.faint(.08) }
       Row {
-        visible: !!detail.m.data && !detail.m.phone
+        visible: !!detail.m.data && !detail.m.phone && !detail.m.api
         width: parent.width; spacing: Style.space(16)
         Column {
           width: (parent.width - parent.spacing) * .5; spacing: Style.space(2)

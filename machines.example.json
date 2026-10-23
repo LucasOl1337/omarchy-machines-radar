@@ -4,6 +4,8 @@
     {"id": "vps1", "name": "VPS principal", "ssh": "minha-vps", "provider": "Hetzner", "role": "Apps e bancos"},
     {"id": "notebook", "name": "Notebook", "ssh": "notebook", "kind": "local", "provider": "Local", "role": "Segunda estação"},
     {"id": "dividida", "name": "VPS dividida", "ssh": "vps-equipe", "readonly": true, "provider": "Hetzner", "role": "Servidor de outra equipe: só observar"},
-    {"id": "celular", "name": "Celular", "adb": "100.64.0.10:5555", "kind": "local", "provider": "Android", "role": "Celular por adb na tailnet"}
+    {"id": "celular", "name": "Celular", "adb": "100.64.0.10:5555", "kind": "local", "provider": "Android", "role": "Celular por adb na tailnet"},
+    {"id": "swarm-db", "name": "Cluster · banco", "portainer": {"env": "CLUSTER", "node": "db01", "endpoint": 1}, "group": "Cluster", "readonly": true, "provider": "Hetzner", "role": "Nó do Swarm lido pelo Portainer"},
+    {"id": "railway", "name": "Railway", "railway": {"environment": "production"}, "readonly": true, "provider": "Railway", "role": "Serviços do Railway"}
   ]
 }
