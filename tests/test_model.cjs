@@ -125,3 +125,28 @@ test('cluster nodes share one group row with the worst state', () => {
     machine({id: 'b', group: 'NexUnio', online: false, data: null})]}, now);
   assert.deepEqual(s.groups, [{id: 'group:NexUnio', name: 'NexUnio', count: 2, state: 'down'}]);
 });
+test('capacity sums cores, RAM and disk of the machines that answered, leaving out Railway, phone and offline', () => {
+  const big = data({cpu: {percent: 50, iowait: 0, steal: 0, load: [1, 1, 1], cores: 16},
+    memory: {total: 64 * GB, used: 32 * GB, available: 32 * GB, swapTotal: 0, swapUsed: 0},
+    // A shared disk holding a 300 GB image counts only what the system uses, and the image counts on its own.
+    disks: [{mount: '/', fs: 'ext4', total: 400 * GB, used: 350 * GB, free: 50 * GB, percent: 88, reserved: 300 * GB, holds: ['/home/a']},
+            {mount: '/home/a', fs: 'ext4', total: 300 * GB, used: 100 * GB, free: 200 * GB, percent: 33}]});
+  const s = M.buildMachines({machines: [
+    machine({id: 'pc', name: 'PC', kind: 'local', data: big, history: [[0, 40, 50], [1, 60, 50]]}),
+    machine({id: 'vps', name: 'VPS', readonly: true, history: [[0, 10, 25], [1, 20, 25]]}),
+    machine({id: 'rw', name: 'Railway', api: 'railway', data: data({platform: 'railway', cpu: {percent: 1, cores: 24, load: [0, 0, 0]}})}),
+    machine({id: 'cel', name: 'Celular', adb: 'x', data: data({platform: 'android'})}),
+    machine({id: 'nb', name: 'Notebook', kind: 'local', online: false, data: null})]}, now);
+  const c = s.capacity;
+  assert.equal(c.count, 2);
+  assert.deepEqual(c.metrics.map(m => m.percent), [44, 45, 38]);
+  assert.match(c.metrics[0].detail, /^8\.8 de 20 núcleos em uso · 11 livres$/);
+  assert.match(c.metrics[2].detail, /^190 GB de 500 GB em uso · 310 GB livres$/);
+  assert.deepEqual(c.left.map(x => x.name), ['Railway', 'Celular', 'Notebook']);
+  assert.deepEqual(c.rows.map(r => r.id), ['pc', 'vps']);
+  // Free capacity on our own machines excludes the watch-only host.
+  assert.equal(c.free.cores, 8);
+  assert.match(c.freeText, /1 máquinas nossas.*8 núcleos, 32\.0 GB de RAM/);
+  // History is weighted by size: 16 cores at 60% and 4 at 20% make 52%.
+  assert.deepEqual(c.cpuHistory, [34, 52]);
+});

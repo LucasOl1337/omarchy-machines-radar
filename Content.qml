@@ -8,12 +8,12 @@ import "MachinesModel.js" as MachinesModel
 Item {
   id: root
   property var snapshot: ({machines: []})
-  property var summary: ({machines: [], groups: [], online: 0, attention: 0})
+  property var summary: ({machines: [], groups: [], capacity: null, online: 0, attention: 0})
   property double now: Date.now()
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property string tab: "all"
-  readonly property var tabs: [{id: "all", name: "Todas", count: summary.machines.length}]
+  readonly property var tabs: [{id: "all", name: "Todas", count: summary.machines.length}, {id: "total", name: "Total"}]
     // A cluster's nodes share one chip, where its first node would be; the chip opens their cards.
     .concat(summary.machines.filter((m, i) => !m.group || summary.machines.findIndex(x => x.group === m.group) === i)
       .map(m => m.group ? (summary.groups || []).find(g => g.name === m.group) : {id: m.id, name: m.name, state: m.state}))
@@ -21,6 +21,7 @@ Item {
   readonly property var selected: summary.machines.find(m => m.id === tab) || null
   readonly property string groupTab: tab.indexOf("group:") === 0 ? tab.slice(6) : ""
   readonly property var cards: tab === "all" ? summary.machines : groupTab ? summary.machines.filter(m => m.group === groupTab) : []
+  readonly property var total: summary.capacity || ({count: 0, metrics: [], rows: [], left: [], freeText: "", cpuHistory: [], memHistory: []})
   readonly property var peers: ((snapshot.tailnet || {}).peers || []).map(p => MachinesModel.peerView(p, now))
   readonly property real gap: Style.space(10)
   readonly property int columns: Math.max(1, Math.floor((width + gap) / (Style.space(400) + gap)))
@@ -283,7 +284,8 @@ Item {
     anchors.bottom: footer.top; anchors.bottomMargin: Style.space(8)
     anchors.left: parent.left; anchors.right: parent.right
     clip: true; contentWidth: width
-    contentHeight: root.cards.length ? grid.implicitHeight : root.tab === "tailnet" ? tailnetList.implicitHeight : detail.implicitHeight
+    contentHeight: root.cards.length ? grid.implicitHeight : root.tab === "tailnet" ? tailnetList.implicitHeight
+      : root.tab === "total" ? totalView.implicitHeight : detail.implicitHeight
     boundsBehavior: Flickable.StopAtBounds
     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
@@ -621,6 +623,83 @@ Item {
       }
     }
 
+    // ---------- all machines summed ----------
+    Column {
+      id: totalView
+      visible: root.tab === "total"
+      width: list.width - Style.space(10); spacing: Style.space(8)
+      readonly property real nameWidth: width * .2
+      readonly property real cellWidth: (width - nameWidth - Style.space(24)) / 3
+      Row {
+        width: parent.width; spacing: Style.space(24)
+        Column {
+          width: (parent.width - parent.spacing) * .55; spacing: Style.space(6)
+          Text { text: "Todas as máquinas somadas"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.heading; font.bold: true }
+          Label { width: parent.width; text: root.total.count + " máquinas no ar com hardware próprio · o que sobra é potencial parado"; opacity: .55 }
+          Repeater { model: root.total.metrics; delegate: Meter { required property var modelData; width: parent.width; height: Style.space(40); metric: modelData } }
+          Label { visible: root.total.freeText !== ""; width: parent.width; wrapMode: Text.WordWrap; text: root.total.freeText; opacity: .8 }
+        }
+        Item {
+          visible: root.total.cpuHistory.length > 1
+          width: (parent.width - parent.spacing) * .45; height: Style.space(170)
+          Spark { anchors.fill: parent; anchors.topMargin: Style.space(30); anchors.bottomMargin: Style.space(16); cpu: root.total.cpuHistory; mem: root.total.memHistory }
+          Label { text: "Uso somado, pesado pelo tamanho de cada máquina"; opacity: .45 }
+          Legend { anchors.bottom: parent.bottom }
+          Label { anchors.right: parent.right; anchors.bottom: parent.bottom; text: "última hora"; opacity: .35 }
+        }
+      }
+      Section { text: "POR MÁQUINA · mais núcleos livres primeiro" }
+      Row {
+        x: Style.space(16)
+        Label { width: totalView.nameWidth; text: "máquina"; opacity: .4 }
+        Repeater {
+          model: ["CPU · núcleos em uso", "RAM", "Disco"]
+          delegate: Label { required property var modelData; width: totalView.cellWidth; leftPadding: Style.space(8); text: modelData; opacity: .4 }
+        }
+      }
+      Repeater {
+        model: root.total.rows
+        delegate: Rectangle {
+          id: totalRow
+          required property var modelData
+          required property int index
+          width: totalView.width; height: Style.space(34); radius: Style.space(6)
+          color: totalMouse.containsMouse ? root.faint(.06) : index % 2 ? "transparent" : root.faint(.03)
+          MouseArea { id: totalMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.tab = totalRow.modelData.id }
+          Rectangle { x: Style.space(4); anchors.verticalCenter: parent.verticalCenter; width: Style.space(6); height: width; radius: width / 2; color: root.stateColor(totalRow.modelData.state) }
+          Row {
+            x: Style.space(16); anchors.verticalCenter: parent.verticalCenter
+            Row {
+              anchors.verticalCenter: parent.verticalCenter
+              width: totalView.nameWidth; spacing: Style.space(6)
+              Label { anchors.verticalCenter: parent.verticalCenter; text: totalRow.modelData.name; font.bold: true }
+              Badge { anchors.verticalCenter: parent.verticalCenter; label: totalRow.modelData.readonly ? "só leitura" : "" }
+            }
+            Repeater {
+              model: [{key: "cpu", use: totalRow.modelData.cpu}, {key: "memory", use: totalRow.modelData.memory}, {key: "disk", use: totalRow.modelData.disk}]
+              delegate: Item {
+                id: cell
+                required property var modelData
+                readonly property color tint: root.toneColor(MachinesModel.tone(modelData.key, modelData.use.percent))
+                width: totalView.cellWidth; height: Style.space(28)
+                Rectangle {
+                  x: Style.space(8); y: Style.space(4); width: parent.width - Style.space(24); height: Style.space(4); radius: height / 2
+                  color: Qt.rgba(cell.tint.r, cell.tint.g, cell.tint.b, .15)
+                  Rectangle { width: parent.width * Math.min(100, cell.modelData.use.percent || 0) / 100; height: parent.height; radius: height / 2; color: cell.tint }
+                }
+                Label { x: Style.space(8); anchors.bottom: parent.bottom; width: parent.width - Style.space(24); text: cell.modelData.use.text; opacity: .7 }
+              }
+            }
+          }
+        }
+      }
+      Label {
+        visible: root.total.left.length > 0
+        width: parent.width; wrapMode: Text.WordWrap; opacity: .45; topPadding: Style.space(4)
+        text: "Fora da soma: " + root.total.left.map(x => x.name + " (" + x.why + ")").join(", ")
+      }
+    }
+
     // ---------- tailnet ----------
     Column {
       id: tailnetList
@@ -649,7 +728,7 @@ Item {
     anchors.bottom: parent.bottom; width: parent.width; elide: Text.ElideRight
     text: root.toast ? (root.toastOk ? "✓ " : "✗ ") + root.toast
       : root.pending ? "clique de novo pra confirmar (4 s)"
-      : "← → aba · 0–9 escolhe · T tailnet · ↑ ↓ rola · R atualiza · clique no card abre o detalhe · leitura a cada 1 min"
+      : "← → aba · 0–9 escolhe (1 = Total) · T tailnet · ↑ ↓ rola · R atualiza · clique no card abre o detalhe · leitura a cada 1 min"
     color: root.toast ? (root.toastOk ? "#22c55e" : "#ef4444") : root.pending ? "#eab308" : root.foreground
     opacity: root.toast || root.pending ? .95 : .4; font.family: root.fontFamily; font.pixelSize: Style.font.caption
   }

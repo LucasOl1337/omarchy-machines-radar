@@ -230,8 +230,71 @@ function buildMachines(snapshot, now) {
   return {
     machines: list,
     groups: groupRows(list),
+    capacity: capacity(list),
     online: list.filter(m => m.online).length,
     attention: list.filter(m => m.state === "down" || m.state === "red" || m.state === "yellow").length
+  };
+}
+
+// Sizes for totals, which run into terabytes.
+function amount(n) {
+  var g = (n || 0) / GB;
+  return g >= 1000 ? (g / 1024).toFixed(1) + " TB" : Math.round(g) + " GB";
+}
+
+function cores(n) { return n >= 10 || n === Math.round(n) ? Math.round(n) + "" : n.toFixed(1); }
+
+// Everything the machines have, summed: how much CPU, RAM and disk is in use and how much sits
+// idle. Railway's vCPU and RAM are plan limits on shared hosts and the phone is not where work
+// runs, so both stay out of the sum; a machine that did not answer has nothing to add.
+function capacity(list) {
+  var rows = [], left = [];
+  list.forEach(function(m) {
+    var d = m.data;
+    if (m.api === "railway") return left.push({name: m.name, why: "limite de plano, não hardware"});
+    if (m.phone) return left.push({name: m.name, why: "celular"});
+    if (!m.online || !d) return left.push({name: m.name, why: "fora do ar"});
+    var cpu = d.cpu || {}, mem = d.memory || {};
+    var disk = (d.disks || []).reduce(function(t, x) { var u = diskUse(x); t.used += u.used; t.size += u.size; return t; }, {used: 0, size: 0});
+    rows.push({id: m.id, name: m.name, state: m.state, readonly: m.readonly,
+               cores: cpu.cores || 0, coresUsed: (cpu.cores || 0) * (cpu.percent || 0) / 100,
+               memUsed: mem.used || 0, memTotal: mem.total || 0, diskUsed: disk.used, diskSize: disk.size,
+               cpuHistory: m.cpuHistory, memHistory: m.memHistory});
+  });
+  function sum(key, only) { return rows.filter(only || (() => true)).reduce((t, r) => t + r[key], 0); }
+  var own = r => !r.readonly;
+  var c = {used: sum("coresUsed"), total: sum("cores")};
+  var r = {used: sum("memUsed"), total: sum("memTotal")};
+  var k = {used: sum("diskUsed"), total: sum("diskSize")};
+  function meter(key, label, t, text, unit, freeUnit) {
+    var pct = percentOf(t.used, t.total);
+    return {key: key, label: label, percent: pct, tone: tone(key, pct), value: Math.round(pct || 0) + "%",
+            detail: text(t.used) + " de " + text(t.total) + unit + " em uso · " + text(t.total - t.used) + freeUnit + " livres"};
+  }
+  // Idle capacity on machines that are ours to load; shared hosts only watch.
+  var free = {cores: sum("cores", own) - sum("coresUsed", own), memory: sum("memTotal", own) - sum("memUsed", own),
+              disk: sum("diskSize", own) - sum("diskUsed", own), machines: rows.filter(own).length};
+  // Last hour, summed: each machine's percentages weighted by its size, aligned from the newest reading.
+  var points = rows.length ? Math.min.apply(null, rows.map(x => x.cpuHistory.length)) : 0;
+  var cpuHistory = [], memHistory = [];
+  for (var i = points; i > 0; i--) {
+    cpuHistory.push(c.total ? rows.reduce((t, x) => t + x.cores * x.cpuHistory[x.cpuHistory.length - i], 0) / c.total : 0);
+    memHistory.push(r.total ? rows.reduce((t, x) => t + x.memTotal * x.memHistory[x.memHistory.length - i], 0) / r.total : 0);
+  }
+  return {
+    count: rows.length,
+    metrics: [meter("cpu", "CPU", c, cores, " núcleos", ""), meter("memory", "RAM", r, gb, " GB", " GB"), meter("disk", "Disco", k, amount, "", "")],
+    free: free,
+    freeText: free.machines === rows.length ? "" : "Livre nas " + free.machines + " máquinas nossas, sem as só leitura: "
+      + cores(free.cores) + " núcleos, " + gb(free.memory) + " GB de RAM e " + amount(free.disk) + " de disco",
+    rows: rows.sort((a, b) => (b.cores - b.coresUsed) - (a.cores - a.coresUsed)).map(x => ({
+      id: x.id, name: x.name, state: x.state, readonly: x.readonly,
+      cpu: {percent: percentOf(x.coresUsed, x.cores), text: cores(x.coresUsed) + " / " + x.cores + " · " + cores(x.cores - x.coresUsed) + " livres"},
+      memory: {percent: percentOf(x.memUsed, x.memTotal), text: gb(x.memUsed) + " / " + gb(x.memTotal) + " GB · " + gb(x.memTotal - x.memUsed) + " livres"},
+      disk: {percent: percentOf(x.diskUsed, x.diskSize), text: amount(x.diskUsed) + " / " + amount(x.diskSize) + " · " + amount(x.diskSize - x.diskUsed) + " livres"}
+    })),
+    left: left,
+    cpuHistory: cpuHistory, memHistory: memHistory
   };
 }
 
@@ -243,4 +306,4 @@ function peerView(peer, now) {
   };
 }
 
-if (typeof module !== "undefined") module.exports = {terminalRows: terminalRows, procRows: procRows, actCommand: actCommand, tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, groupRows: groupRows, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};
+if (typeof module !== "undefined") module.exports = {terminalRows: terminalRows, procRows: procRows, actCommand: actCommand, tone: tone, worst: worst, bytes: bytes, duration: duration, metrics: metrics, alerts: alerts, machineView: machineView, buildMachines: buildMachines, groupRows: groupRows, capacity: capacity, amount: amount, peerView: peerView, unitName: unitName, diskUse: diskUse, diskDetail: diskDetail, STATE_ORDER: STATE_ORDER};

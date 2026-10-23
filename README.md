@@ -6,6 +6,8 @@ O ícone de servidor abre uma grade com CPU, RAM, o disco mais cheio e swap, cad
 
 ![Visão geral com um card por máquina](docs/visao-geral.png)
 
+A aba **Total** soma todas as máquinas no ar: núcleos de CPU em uso de quantos existem, RAM e disco, com o que sobra livre, o uso somado da última hora (cada máquina pesa pelo tamanho) e uma linha por máquina, a de mais núcleos livres primeiro. Railway fica fora da soma (vCPU e RAM são limite de plano em host dividido), assim como o celular e o que está desligado; a folga nas máquinas nossas, sem as `readonly`, aparece à parte.
+
 Clicar num card abre o detalhe: processos que mais gastam CPU e memória (agrupados pelo nome), containers do Docker, agentes de IA abertos, GPU, discos, rede e IO. A aba Tailnet lista todos os aparelhos da sua rede Tailscale, com o caminho de cada um (direto ou relay).
 
 No detalhe dá pra agir na máquina:
