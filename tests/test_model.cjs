@@ -31,11 +31,14 @@ test('a nearly full disk alone is yellow, never red', () => {
   assert.deepEqual(v.alerts.map(a => a.tone), ['yellow']);
   assert.equal(v.metrics.find(m => m.key === 'disk').tone, 'yellow');
 });
-test('the fullest disk is the one shown on the card', () => {
+test('every disk has its own meter on the card, fullest first, with its label', () => {
   const v = M.machineView(machine({data: data({disks: [
-    {mount: '/', fs: 'ext4', total: 100 * GB, used: 10 * GB, free: 90 * GB, percent: 10},
-    {mount: '/data', fs: 'ext4', total: 100 * GB, used: 80 * GB, free: 20 * GB, percent: 80}]})}), now);
-  assert.match(v.metrics.find(m => m.key === 'disk').detail, /^\/data/);
+    {mount: '/', fs: 'btrfs', label: 'PRINCIPAL', total: 100 * GB, used: 10 * GB, free: 90 * GB, percent: 10},
+    {mount: '/data', fs: 'btrfs', label: 'JOGOS', total: 100 * GB, used: 80 * GB, free: 20 * GB, percent: 80}]})}), now);
+  const disks = v.metrics.filter(m => m.key === 'disk');
+  assert.equal(disks.length, 2);
+  assert.match(disks[0].detail, /^\/data · JOGOS · /);
+  assert.match(disks[1].detail, /^\/ · PRINCIPAL · /);
 });
 test('offline vps is down, offline local machine is just off', () => {
   assert.equal(M.machineView(machine({online: false, error: 'timeout'}), now).state, 'down');

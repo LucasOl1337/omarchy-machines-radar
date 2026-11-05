@@ -405,7 +405,7 @@ Item {
         // Left: usage, history, disks, warnings.
         Column {
           width: (parent.width - parent.spacing) * .5; spacing: Style.space(6)
-          Repeater { model: detail.m.metrics; delegate: Meter { required property var modelData; width: parent.width; metric: modelData } }
+          Repeater { model: detail.m.metrics.filter(x => x.key !== "disk"); delegate: Meter { required property var modelData; width: parent.width; metric: modelData } }
           Label {
             // Railway has no host to speak of, and a Swarm node's processes are its containers, listed beside.
             visible: detail.m.api !== "railway"
@@ -438,7 +438,7 @@ Item {
               width: parent.width
               readonly property var use: MachinesModel.diskUse(modelData)
               metric: ({label: modelData.mount === "/" ? "raiz" : modelData.mount.split("/").pop().slice(0, 6), percent: use.percent, tone: MachinesModel.tone("disk", use.percent), value: Math.round(use.percent) + "%",
-                        detail: modelData.mount + " · " + modelData.fs + " · " + MachinesModel.diskDetail(modelData) + " · " + MachinesModel.bytes(modelData.free) + " livres"})
+                        detail: modelData.mount + (modelData.label ? " · " + modelData.label : "") + " · " + modelData.fs + " · " + MachinesModel.diskDetail(modelData) + " · " + MachinesModel.bytes(modelData.free) + " livres"})
             }
           }
           Section { text: detail.m.alerts.length ? "AVISOS" : "AVISOS · nenhum" }

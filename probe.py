@@ -205,9 +205,21 @@ def loop_images():
     return out
 
 
+def fs_labels():
+    """Filesystem label by real device node (/dev/dm-1 -> "JOGOS"), from /dev/disk/by-label."""
+    out = {}
+    try:
+        entries = list(Path("/dev/disk/by-label").iterdir())
+    except OSError:
+        return out
+    for entry in entries:
+        out[os.path.realpath(entry)] = entry.name.replace("\\x20", " ")
+    return out
+
+
 def disks():
     seen, out = set(), []
-    images, by_mount = loop_images(), {}
+    images, by_mount, labels = loop_images(), {}, fs_labels()
     for line in read("/proc/mounts").splitlines():
         dev, mount, fstype = line.split()[:3]
         mount = mount.replace("\\040", " ")
@@ -226,6 +238,9 @@ def disks():
         # Same percentage as df: root's reserved blocks don't count as free.
         disk = {"mount": mount, "fs": fstype, "total": total, "used": used, "free": free,
                 "percent": round(100 * used / max(1, used + free), 1)}
+        label = labels.get(os.path.realpath(dev))
+        if label:
+            disk["label"] = label
         if dev in images:
             disk["image"] = images[dev][0]
             by_mount[mount] = dev

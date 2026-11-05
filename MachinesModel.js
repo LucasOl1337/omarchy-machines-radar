@@ -92,13 +92,13 @@ function metrics(d) {
   var memPct = percentOf(mem.used, mem.total);
   out.push({key: "memory", label: "RAM", percent: memPct, tone: tone("memory", memPct),
             detail: gb(mem.used) + " / " + gb(mem.total) + " GB", value: Math.round(memPct || 0) + "%"});
+  // Every disk gets its own meter, fullest first, so a second disk is never hidden behind the first.
   var disks = (d.disks || []).slice().sort((a, b) => diskUse(b).percent - diskUse(a).percent);
-  if (disks.length) {
-    var disk = disks[0];
+  disks.forEach(function(disk) {
     var use = diskUse(disk);
     out.push({key: "disk", label: "Disco", percent: use.percent, tone: tone("disk", use.percent),
-              detail: disk.mount + " · " + diskDetail(disk), value: Math.round(use.percent) + "%"});
-  }
+              detail: disk.mount + (disk.label ? " · " + disk.label : "") + " · " + diskDetail(disk), value: Math.round(use.percent) + "%"});
+  });
   if (mem.swapTotal > 0) {
     var swapPct = percentOf(mem.swapUsed, mem.swapTotal);
     var io = d.swap || {};
