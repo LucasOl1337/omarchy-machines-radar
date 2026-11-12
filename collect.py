@@ -12,6 +12,7 @@ of CPU and memory history, and the tailnet list from `tailscale status`.
 from __future__ import annotations
 
 import json
+import base64
 import os
 import subprocess
 import sys
@@ -80,14 +81,20 @@ def probe(machine):
     if machine.get("adb"):
         import android
         return android.probe(machine["adb"])
-    script = (HERE / "probe.py").read_text()
-    if machine.get("local"):
+    script = (HERE / ("windows-probe.ps1" if machine.get("platform") == "windows" else "probe.py")).read_text()
+    if machine.get("platform") == "windows":
+        # Keep cmd.exe's command line below 8191 chars; the probe travels on stdin.
+        wrapper = '[Console]::InputEncoding=[Text.Encoding]::UTF8; & ([scriptblock]::Create([Console]::In.ReadToEnd()))'
+        encoded = base64.b64encode(wrapper.encode("utf-16le")).decode("ascii")
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", machine["ssh"], "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+    elif machine.get("local"):
         command = [sys.executable, "-"]
     else:
         command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", machine["ssh"], "python3", "-"]
     started = time.monotonic()
     try:
-        result = subprocess.run(command, input=script, capture_output=True, text=True, timeout=TIMEOUT)
+        result = subprocess.run(command, input=script, capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         return None, "Sem resposta em %d s" % TIMEOUT, None
     except OSError as error:

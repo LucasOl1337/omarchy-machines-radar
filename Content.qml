@@ -385,8 +385,8 @@ Item {
           visible: !detail.m.api
           anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(6)
           Action { label: "Terminal"; tip: detail.m.phone ? "adb shell no celular" : "shell novo na máquina"; onClicked: root.openShell(detail.m) }
-          Action { visible: !detail.m.phone; label: "tmux"; tip: "entra (ou cria) a sessão tmux \"radar\": continua viva se a janela fechar"; onClicked: root.act(detail.m, "open", ["tmux", "radar"], true) }
-          Action { label: detail.m.phone ? "top" : "btop"; onClicked: root.openTop(detail.m) }
+          Action { visible: !detail.m.phone && detail.d.platform !== "windows"; label: "tmux"; tip: "entra (ou cria) a sessão tmux \"radar\": continua viva se a janela fechar"; onClicked: root.act(detail.m, "open", ["tmux", "radar"], true) }
+          Action { visible: detail.d.platform !== "windows"; label: detail.m.phone ? "top" : "btop"; onClicked: root.openTop(detail.m) }
           Action { visible: detail.m.phone; label: "Tela"; tip: "espelha e controla o celular (scrcpy)"; onClicked: root.act(detail.m, "open", ["screen"], true) }
           Action { label: detail.m.local ? "Copiar host" : detail.m.phone ? "Copiar adb" : "Copiar ssh"; onClicked: root.copySsh(detail.m) }
         }
@@ -394,8 +394,13 @@ Item {
       Label { width: parent.width; text: detail.m.role || ""; opacity: .75 }
       Label {
         width: parent.width; opacity: .45
+        wrapMode: Text.WordWrap
         text: [detail.m.summary, detail.d.system ? detail.d.system.kernel : "", detail.d.system ? detail.d.system.cpuModel : "",
                detail.m.online ? "lido há " + detail.m.ageText + (detail.m.latencyMs ? " em " + (detail.m.latencyMs / 1000).toFixed(1) + " s" : "") : ""].filter(Boolean).join(" · ")
+      }
+      Label {
+        visible: detail.d.platform === "windows"
+        width: parent.width; text: detail.m.facts; opacity: .75; wrapMode: Text.WordWrap
       }
       Label { visible: !detail.m.data; width: parent.width; text: detail.m.alerts.length ? detail.m.alerts[0].text : "Sem leitura ainda."; opacity: .7 }
 
@@ -410,7 +415,7 @@ Item {
             // Railway has no host to speak of, and a Swarm node's processes are its containers, listed beside.
             visible: detail.m.api !== "railway"
             width: parent.width; opacity: .5
-            text: detail.d.cpu ? "iowait " + detail.d.cpu.iowait + "% · steal " + detail.d.cpu.steal + "% · carga " + detail.d.cpu.load.map(x => x.toFixed(2)).join(" / ")
+            text: detail.d.cpu && detail.d.platform !== "windows" ? "iowait " + detail.d.cpu.iowait + "% · steal " + detail.d.cpu.steal + "% · carga " + detail.d.cpu.load.map(x => x.toFixed(2)).join(" / ")
               + (detail.m.api ? "" : " · " + detail.d.processes.total + " processos, " + detail.d.processes.running + " rodando") : ""
           }
           Label {
@@ -465,7 +470,7 @@ Item {
         Column {
           width: (parent.width - parent.spacing) * .5; spacing: Style.space(4)
           // API machines list their containers or services below instead of processes.
-          Section { visible: !detail.m.api; text: "PROCESSOS POR CPU (% DE UM NÚCLEO)" }
+          Section { visible: !detail.m.api && !!detail.d.processes; text: "PROCESSOS POR CPU (% DE UM NÚCLEO)" }
           Repeater {
             model: detail.d.processes && !detail.m.api ? detail.d.processes.topCpu.slice(0, 8) : []
             delegate: Item {
@@ -476,7 +481,7 @@ Item {
             }
           }
           Label { visible: !detail.m.api && !!detail.d.processes && !detail.d.processes.topCpu.length; text: "nada acima de 0,5% agora"; opacity: .45 }
-          Section { visible: !detail.m.api; text: "PROCESSOS POR MEMÓRIA" }
+          Section { visible: !detail.m.api && !!detail.d.processes; text: "PROCESSOS POR MEMÓRIA" }
           Repeater {
             model: detail.d.processes && !detail.m.api ? detail.d.processes.topMem.slice(0, 8) : []
             delegate: Item {
@@ -514,9 +519,9 @@ Item {
       }
 
       // ---------- terminals, tmux and processes: full width, with actions ----------
-      Rectangle { visible: !!detail.m.data && !detail.m.phone && !detail.m.api; width: parent.width; height: 1; color: root.faint(.08) }
+      Rectangle { visible: !!detail.m.data && !detail.m.phone && !detail.m.api && detail.d.platform !== "windows"; width: parent.width; height: 1; color: root.faint(.08) }
       Row {
-        visible: !!detail.m.data && !detail.m.phone && !detail.m.api
+        visible: !!detail.m.data && !detail.m.phone && !detail.m.api && detail.d.platform !== "windows"
         width: parent.width; spacing: Style.space(16)
         Column {
           width: (parent.width - parent.spacing) * .5; spacing: Style.space(2)

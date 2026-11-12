@@ -33,7 +33,7 @@ Novidades de cada versão em [docs/releases](docs/releases/).
 
 ## Instalar
 
-Requer Omarchy com Quickshell e plugins, Python 3 e systemd do usuário. Nas máquinas remotas basta `python3` e acesso SSH sem senha interativa (chave no agente ou sem passphrase). Nada é instalado nelas. Tailscale, Docker e `nvidia-smi` são opcionais. Node.js é necessário só pra rodar os testes do modelo.
+Requer Omarchy com Quickshell e plugins, Python 3 e systemd do usuário. Nas máquinas remotas Linux basta `python3` e acesso SSH sem senha interativa (chave no agente ou sem passphrase). Windows usa PowerShell 5.1 e OpenSSH, sem Python. Nada é instalado pelo coletor nelas. Tailscale, Docker e `nvidia-smi` são opcionais. Node.js é necessário só pra rodar os testes do modelo.
 
 ```bash
 git clone https://github.com/LucasOl1337/omarchy-machines-radar.git
@@ -53,6 +53,7 @@ Cada máquina do cadastro tem:
 - `tailnet` (opcional): nome do aparelho no Tailscale, quando difere do hostname.
 - `adb` (em vez de `ssh`): serial do celular Android no `adb devices`, por exemplo `IP:5555`. Use com `kind: "local"`, pra celular desligado não virar alarme.
 - `readonly` (opcional): `true` esconde encerrar, matar e reiniciar; o radar só observa.
+- `platform: "windows"` (com `ssh`): usa `windows-probe.ps1` somente leitura. CPU, RAM, volumes, uptime/último boot em Brasília; SMART 199 acumulado e até 10 eventos 41/6008 dos últimos 30 dias quando disponíveis. Sem mensagem de evento, linha de comando ou instalação remota. Falta de permissão/suporte aparece como indisponível, nunca como zero erros. Use `readonly: true` em PCs de operação; desligado é normal com `kind: "local"`. Serviços SSH/Tailscale e chave sem expiração são provisionados fora do radar.
 - `portainer` (em vez de `ssh`): `{"env": "PREFIXO", "node": "hostname do nó", "endpoint": 1}`. O radar lê `PREFIXO_PORTAINER_URL`, `PREFIXO_PORTAINER_TOKEN` e, se houver, `PREFIXO_HCLOUD_TOKEN` (rede).
 - `railway` (em vez de `ssh`): `{"project": "nome ou id", "environment": "production"}`; sem `project`, soma todos os projetos que o token vê. Token de conta em `RAILWAY_TOKEN` (token de workspace não lista projetos).
 - `group` (opcional): nome do cluster; máquinas com o mesmo grupo viram um chip só.

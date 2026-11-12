@@ -86,6 +86,7 @@ function metrics(d) {
   // Railway has no load average, only vCPU used against the services' limits.
   out.push({key: "cpu", label: "CPU", percent: cpu.percent, tone: tone("cpu", cpu.percent),
             detail: d.platform === "railway" ? (cpu.used || 0).toFixed(2) + " de " + (cpu.cores || "?") + " vCPU de limite"
+              : d.platform === "windows" ? (cpu.cores || "?") + " processadores lógicos"
               : "carga " + (load[0] !== undefined ? load[0].toFixed(2) : "—") + " · " + (cpu.cores || "?") + " núcleos",
             value: Math.round(cpu.percent || 0) + "%"});
   var mem = d.memory || {};
@@ -159,11 +160,18 @@ function machineView(machine, now) {
   var agentCount = d ? Object.keys(d.agents || {}).reduce((sum, k) => sum + d.agents[k], 0) : 0;
   var facts = [];
   if (d) {
-    facts.push("↓ " + rate(d.net.rx) + "  ↑ " + rate(d.net.tx));
+    if (d.net) facts.push("↓ " + rate(d.net.rx) + "  ↑ " + rate(d.net.tx));
     if (d.containers) facts.push(running + "/" + containers.length + (d.platform === "railway" ? " serviços no ar" : " containers"));
     if (agentCount) facts.push(agentCount + (agentCount === 1 ? " agente" : " agentes"));
     if (d.temperature) facts.push(Math.round(d.temperature) + "°C");
     if (d.battery && d.battery.level !== null) facts.push("bateria " + d.battery.level + "%" + (d.battery.plugged ? " ⚡" : ""));
+    if (d.platform === "windows" && d.health) {
+      var h = d.health;
+      facts.push(h.smartAvailable ? "SMART 199: " + h.smart199.map(s => s.raw).join(" / ") + " (acumulado)" : "SMART 199 indisponível");
+      var events = h.unexpectedShutdowns || [];
+      facts.push(h.eventsAvailable ? "eventos 41/6008: " + events.length + (events.length === 10 ? "+" : "") + " em " + h.eventWindowDays + " dias"
+        + (events.length && events[0].atBrasilia ? " · último " + events[0].atBrasilia + " BRT" : "") : "eventos de desligamento indisponíveis");
+    }
   }
   var online = machine.online;
   var state = !online ? (machine.kind === "local" ? "off" : "down") : warnings.some(w => w.tone === "red") ? "red" : warnings.some(w => w.tone === "yellow") ? "yellow" : "ok";
@@ -176,7 +184,7 @@ function machineView(machine, now) {
     host: sys.hostname || "", ip: (machine.tailnet && machine.tailnet.ip) || sys.tailscaleIp || "",
     tailnet: machine.tailnet,
     api: machine.api || "", group: machine.group || "",
-    summary: d ? [sys.os, sys.cores && d.platform !== "railway" ? sys.cores + " núcleos" : "", sys.uptime ? "ligado há " + duration(sys.uptime) : ""].filter(Boolean).join(" · ") : "Ainda sem leitura",
+    summary: d ? [sys.os, sys.cores && d.platform !== "railway" ? sys.cores + " núcleos" : "", sys.uptime ? "ligado há " + duration(sys.uptime) : "", sys.bootBrasilia ? "boot " + sys.bootBrasilia + " BRT" : ""].filter(Boolean).join(" · ") : "Ainda sem leitura",
     metrics: list, alerts: warnings, facts: facts.join(" · "),
     cpuHistory: (machine.history || []).map(p => p[1]),
     memHistory: (machine.history || []).map(p => p[2]),
