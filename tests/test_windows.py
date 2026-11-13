@@ -52,6 +52,16 @@ class WindowsTests(unittest.TestCase):
         for mutation in ('Restart-', 'Stop-Process', 'Set-', 'Out-File', 'Start-Service'):
             self.assertNotIn(mutation, source)
 
+    def test_nonadmin_fallback_reads_os_apis_without_elevation(self):
+        source = (ROOT / 'windows-probe.ps1').read_text()
+        for api in ('GlobalMemoryStatusEx', 'GetSystemTimes', 'GetTickCount64', '[IO.DriveInfo]::GetDrives()'):
+            self.assertIn(api, source)
+        self.assertIn("metricSource = 'win32-readonly'", source)
+        self.assertIn('elapsed <= 0', source)
+        self.assertIn('Memory metrics unavailable', source)
+        for escalation in ('SetSecurityDescriptor', 'Register-ScheduledTask', 'RunAs', 'icacls', 'Add-LocalGroupMember'):
+            self.assertNotIn(escalation, source)
+
     def test_store_readonly_blocks_all_destructive_verbs(self):
         import os
         import sys
