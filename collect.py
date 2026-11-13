@@ -10,6 +10,7 @@ of CPU and memory history, and the tailnet list from `tailscale status`.
 from __future__ import annotations
 
 import json
+import base64
 import os
 import subprocess
 import sys
@@ -59,8 +60,11 @@ def probe(machine):
     if machine.get("adb"):
         import android
         return android.probe(machine["adb"])
-    script = (HERE / "probe.py").read_text()
-    if machine.get("local"):
+    script = (HERE / ("windows-probe.ps1" if machine.get("platform") == "windows" else "probe.py")).read_text()
+    if machine.get("platform") == "windows":
+        encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", machine["ssh"], "powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+    elif machine.get("local"):
         command = [sys.executable, "-"]
     else:
         command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", machine["ssh"], "python3", "-"]

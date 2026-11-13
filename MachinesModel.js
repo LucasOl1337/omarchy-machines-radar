@@ -135,7 +135,7 @@ function machineView(machine, now) {
   var agentCount = d ? Object.keys(d.agents || {}).reduce((sum, k) => sum + d.agents[k], 0) : 0;
   var facts = [];
   if (d) {
-    facts.push("↓ " + rate(d.net.rx) + "  ↑ " + rate(d.net.tx));
+    if (d.net) facts.push("↓ " + rate(d.net.rx) + "  ↑ " + rate(d.net.tx));
     if (d.containers) facts.push(running + "/" + containers.length + " containers");
     if (agentCount) facts.push(agentCount + (agentCount === 1 ? " agente" : " agentes"));
     if (d.temperature) facts.push(Math.round(d.temperature) + "°C");

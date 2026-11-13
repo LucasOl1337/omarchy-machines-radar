@@ -400,7 +400,7 @@ Item {
           Repeater { model: detail.m.metrics; delegate: Meter { required property var modelData; width: parent.width; metric: modelData } }
           Label {
             width: parent.width; opacity: .5
-            text: detail.d.cpu ? "iowait " + detail.d.cpu.iowait + "% · steal " + detail.d.cpu.steal + "% · carga " + detail.d.cpu.load.map(x => x.toFixed(2)).join(" / ")
+            text: detail.d.cpu && detail.d.platform !== "windows" ? "iowait " + detail.d.cpu.iowait + "% · steal " + detail.d.cpu.steal + "% · carga " + detail.d.cpu.load.map(x => x.toFixed(2)).join(" / ")
               + " · " + detail.d.processes.total + " processos, " + detail.d.processes.running + " rodando" : ""
           }
           Label {
