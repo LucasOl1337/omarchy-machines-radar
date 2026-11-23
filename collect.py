@@ -153,6 +153,10 @@ def collect():
     for machine, (data, error, latency) in zip(machines, results):
         before = previous.get(machine["id"], {})
         history = before.get("history", [])
+        # Disco de outra pessoa num servidor dividido: some do card, dos avisos e da soma.
+        ignore = set(machine.get("ignoreMounts") or [])
+        if data and ignore:
+            data["disks"] = [d for d in data.get("disks", []) if d.get("mount") not in ignore]
         if data:
             history = (history + [[now, data["cpu"]["percent"],
                                    round(100 * data["memory"]["used"] / max(1, data["memory"]["total"]), 1)]])[-HISTORY_POINTS:]
