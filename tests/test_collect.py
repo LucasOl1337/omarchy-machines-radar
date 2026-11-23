@@ -222,5 +222,20 @@ class CollectTests(unittest.TestCase):
             self.assertEqual((state / 'status.json').stat().st_mode & 0o777, 0o600)
 
 
+class MemoryTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(ROOT))
+
+    def test_inflated_watermarks_do_not_count_free_ram_as_used(self):
+        import probe
+        kb = 1024
+        # sherlocker-bot, 23/11/2026: watermark_scale_factor 1382, MemAvailable under MemFree.
+        m = {"MemTotal": 15988552 * kb, "MemFree": 3553112 * kb, "MemAvailable": 1859960 * kb,
+             "Buffers": 220584 * kb, "Cached": 4146960 * kb, "Shmem": 19876 * kb, "SReclaimable": 1379476 * kb}
+        self.assertEqual(probe.effective_available(m), (3553112 + 220584 + 4146960 - 19876 + 1379476) * kb)
+        m["MemAvailable"] = 9000000 * kb
+        self.assertEqual(probe.effective_available(m), 9000000 * kb)
+
+
 if __name__ == '__main__':
     unittest.main()

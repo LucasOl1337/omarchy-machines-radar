@@ -26,6 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from probe import effective_available
 
 SECRETS = Path(os.environ.get("OMARCHY_MACHINES_SECRETS", Path.home() / ".config/omarchy-machines/secrets.env"))
 USER_AGENT = "omarchy-machines-radar/1.2"
@@ -150,8 +151,8 @@ def parse_node(raw, elapsed=1.0):
     return {
         "cpu": {"percent": round(100 * (total - idle) / total, 1), "iowait": round(100 * delta[4] / total, 1),
                 "steal": round(100 * delta[7] / total, 1), "load": [float(x) for x in t[:3]], "cores": cores},
-        "memory": {"total": mem.get("MemTotal", 0), "used": mem.get("MemTotal", 0) - mem.get("MemAvailable", 0),
-                   "available": mem.get("MemAvailable", 0), "cache": mem.get("Cached", 0) + mem.get("Buffers", 0),
+        "memory": {"total": mem.get("MemTotal", 0), "used": mem.get("MemTotal", 0) - effective_available(mem),
+                   "available": effective_available(mem), "cache": mem.get("Cached", 0) + mem.get("Buffers", 0),
                    "swapTotal": mem.get("SwapTotal", 0), "swapUsed": mem.get("SwapTotal", 0) - mem.get("SwapFree", 0),
                    "pressure": psi},
         "disks": disks,

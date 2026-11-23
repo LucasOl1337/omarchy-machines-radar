@@ -172,12 +172,26 @@ def memory_pressure():
     return None
 
 
+def effective_available(m):
+    """MemAvailable, unless a huge vm.watermark_scale_factor made it smaller than MemFree.
+
+    The kernel subtracts the zones' watermarks from MemAvailable; a host tuned with a
+    very high watermark_scale_factor (seen at 1382, ~4 GB on 16 GB) then reports RAM
+    that is plainly free as used. Available below free can't be real, so fall back to
+    free(1)'s classic count: free + buffers + page cache - shmem + reclaimable slab."""
+    available, free = m.get("MemAvailable", 0), m.get("MemFree", 0)
+    if available >= free:
+        return available
+    return min(m.get("MemTotal", 0), free + m.get("Buffers", 0) + m.get("Cached", 0)
+               - m.get("Shmem", 0) + m.get("SReclaimable", 0))
+
+
 def memory():
     m = {}
     for line in read("/proc/meminfo").splitlines():
         key, _, value = line.partition(":")
         m[key] = int(value.split()[0]) * 1024
-    total, available = m.get("MemTotal", 0), m.get("MemAvailable", 0)
+    total, available = m.get("MemTotal", 0), effective_available(m)
     return {
         "total": total, "used": total - available, "available": available,
         "cache": m.get("Cached", 0) + m.get("Buffers", 0),
