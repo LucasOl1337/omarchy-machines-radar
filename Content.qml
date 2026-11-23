@@ -23,8 +23,8 @@ Item {
   readonly property var cards: tab === "all" ? summary.machines : groupTab ? summary.machines.filter(m => m.group === groupTab) : []
   readonly property var total: summary.capacity || ({count: 0, metrics: [], rows: [], left: [], freeText: "", cpuHistory: [], memHistory: []})
   readonly property var peers: ((snapshot.tailnet || {}).peers || []).map(p => MachinesModel.peerView(p, now))
-  readonly property real gap: Style.space(10)
-  readonly property int columns: Math.max(1, Math.floor((width + gap) / (Style.space(400) + gap)))
+  readonly property real gap: Style.space(8)
+  readonly property int columns: Math.max(1, Math.floor((list.width - Style.space(10) + gap) / (Style.space(320) + gap)))
   readonly property real cardWidth: (list.width - Style.space(10) - gap * (columns - 1)) / columns
   readonly property color cpuColor: "#60a5fa"
   readonly property color memColor: "#c084fc"
@@ -108,7 +108,7 @@ Item {
     property bool selected: false
     property color dot: "transparent"
     signal clicked()
-    width: chipText.implicitWidth + Style.space(22) + (dot.a > 0 ? Style.space(12) : 0); height: Style.space(26); radius: Style.space(6)
+    width: chipText.implicitWidth + Style.space(16) + (dot.a > 0 ? Style.space(10) : 0); height: Style.space(24); radius: Style.space(6)
     color: selected ? root.faint(.14) : chipMouse.containsMouse ? root.faint(.07) : "transparent"
     border.width: 1; border.color: root.faint(selected ? .22 : .1)
     Row {
@@ -132,12 +132,13 @@ Item {
   component Meter: Item {
     id: meter
     property var metric: ({})
-    height: Style.space(30)
+    property bool compact: false
+    height: Style.space(compact ? 25 : 30)
     Rectangle { id: meterDot; anchors.verticalCenter: parent.verticalCenter; width: Style.space(8); height: width; radius: width / 2; color: root.toneColor(meter.metric.tone) }
     Text {
       id: meterLabel
       anchors.left: meterDot.right; anchors.leftMargin: Style.space(7); anchors.verticalCenter: parent.verticalCenter
-      width: Style.space(52); text: meter.metric.label || ""; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true
+      width: Style.space(meter.compact ? 42 : 52); text: meter.metric.label || ""; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true
     }
     Text {
       id: meterValue
@@ -148,7 +149,7 @@ Item {
     Item {
       anchors.left: meterLabel.right; anchors.leftMargin: Style.space(4)
       anchors.right: meterValue.left; anchors.rightMargin: Style.space(8)
-      anchors.verticalCenter: parent.verticalCenter; height: Style.space(24)
+      anchors.verticalCenter: parent.verticalCenter; height: Style.space(meter.compact ? 22 : 24)
       Rectangle {
         width: parent.width; height: Style.space(4); radius: height / 2
         color: Qt.rgba(root.toneColor(meter.metric.tone).r, root.toneColor(meter.metric.tone).g, root.toneColor(meter.metric.tone).b, .15)
@@ -245,7 +246,7 @@ Item {
   // ---------- header ----------
   Column {
     id: header
-    width: parent.width; spacing: Style.space(10)
+    width: parent.width; spacing: Style.space(6)
     Item {
       width: parent.width; height: Style.space(28)
       Text {
@@ -280,7 +281,7 @@ Item {
 
   Flickable {
     id: list
-    anchors.top: header.bottom; anchors.topMargin: Style.space(12)
+    anchors.top: header.bottom; anchors.topMargin: Style.space(8)
     anchors.bottom: footer.top; anchors.bottomMargin: Style.space(8)
     anchors.left: parent.left; anchors.right: parent.right
     clip: true; contentWidth: width
@@ -299,7 +300,7 @@ Item {
         delegate: Rectangle {
           id: card
           required property var modelData
-          width: root.cardWidth; height: body.implicitHeight + Style.space(24)
+          width: root.cardWidth; height: body.implicitHeight + Style.space(16)
           radius: Style.space(8)
           color: cardMouse.containsMouse ? root.faint(.06) : root.faint(.035)
           border.width: 1; border.color: modelData.state === "down" || modelData.state === "red" ? Qt.rgba(0.94, 0.27, 0.27, .45) : root.faint(.09)
@@ -307,45 +308,41 @@ Item {
           MouseArea { id: cardMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.tab = card.modelData.id }
           Column {
             id: body
-            x: Style.space(12); y: Style.space(12); width: parent.width - Style.space(24); spacing: Style.space(6)
+            x: Style.space(8); y: Style.space(8); width: parent.width - Style.space(16); spacing: Style.space(3)
             Item {
-              width: parent.width; height: Style.space(34)
+              width: parent.width; height: Style.space(24)
               Rectangle {
                 id: stateBox
-                width: Style.space(34); height: width; radius: Style.space(7); color: root.faint(.06)
-                Text { anchors.centerIn: parent; text: card.modelData.phone ? "" : card.modelData.local ? "" : card.modelData.api === "railway" ? "" : ""; color: root.stateColor(card.modelData.state); font.family: root.fontFamily; font.pixelSize: Style.font.title }
+                width: Style.space(24); height: width; radius: Style.space(5); color: root.faint(.06)
+                Text { anchors.centerIn: parent; text: card.modelData.phone ? "" : card.modelData.local ? "" : card.modelData.api === "railway" ? "" : ""; color: root.stateColor(card.modelData.state); font.family: root.fontFamily; font.pixelSize: Style.font.body }
               }
               Column {
-                anchors.left: stateBox.right; anchors.leftMargin: Style.space(10); anchors.right: badges.left; anchors.rightMargin: Style.space(8)
+                anchors.left: stateBox.right; anchors.leftMargin: Style.space(6); anchors.right: badges.left; anchors.rightMargin: Style.space(6)
                 anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(2)
                 Text { width: parent.width; text: card.modelData.name; elide: Text.ElideRight; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true }
-                Label { width: parent.width; text: card.modelData.target + (card.modelData.ip && card.modelData.target.indexOf(card.modelData.ip) < 0 ? " · " + card.modelData.ip : ""); opacity: .6 }
               }
               Row {
                 id: badges
                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(4)
                 Badge { label: root.stateText(card.modelData); tint: root.stateColor(card.modelData.state) }
-                Badge { label: card.modelData.provider }
               }
             }
-            Label { width: parent.width; text: card.modelData.role; opacity: .75 }
-            Label { width: parent.width; text: card.modelData.summary; opacity: .45 }
             Repeater {
               model: card.modelData.metrics
-              delegate: Meter { required property var modelData; width: body.width; metric: modelData }
+              delegate: Meter { required property var modelData; width: body.width; metric: modelData; compact: true }
             }
             Item {
               visible: card.modelData.cpuHistory.length > 1
-              width: parent.width; height: Style.space(46)
+              width: parent.width; height: Style.space(34)
               Spark { anchors.fill: parent; anchors.bottomMargin: Style.space(14); cpu: card.modelData.cpuHistory; mem: card.modelData.memHistory }
               Legend { anchors.bottom: parent.bottom }
               Label { anchors.right: parent.right; anchors.bottom: parent.bottom; text: "última hora"; opacity: .35 }
             }
             Repeater {
-              model: card.modelData.alerts.slice(0, 3)
+              model: card.modelData.alerts.slice(0, 2)
               delegate: Label { required property var modelData; width: body.width; text: "• " + modelData.text; color: modelData.tone === "none" ? root.foreground : root.toneColor(modelData.tone); opacity: modelData.tone === "none" ? .5 : .95 }
             }
-            Label { visible: card.modelData.alerts.length > 3; text: "+ " + (card.modelData.alerts.length - 3) + " avisos no detalhe"; opacity: .45 }
+            Label { visible: card.modelData.alerts.length > 2; text: "+ " + (card.modelData.alerts.length - 2) + " avisos no detalhe"; opacity: .45 }
             Rectangle { width: parent.width; height: 1; color: root.faint(.08) }
             Label {
               width: parent.width; opacity: .5
